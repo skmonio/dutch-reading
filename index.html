@@ -131,7 +131,7 @@
   .bank-source{font-size:.7rem;color:var(--label);margin-top:8px;text-transform:uppercase;letter-spacing:.05em}
   .bank-remove{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--label);font-size:1rem;line-height:1;cursor:pointer;padding:4px;transition:color .12s}
   .bank-remove:hover{color:var(--wrong)}
-  .bank-practice{display:flex;flex-direction:column;align-items:center;gap:14px}
+  .bank-practice-inner{display:flex;flex-direction:column;align-items:center;gap:14px}
   .practice-progress{font-size:.72rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--label)}
   .practice-card{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:32px 28px;width:100%;max-width:440px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:20px}
   .practice-sentence{font-family:'IBM Plex Serif',serif;font-size:1.05rem;line-height:1.6;color:var(--text)}
@@ -198,7 +198,7 @@
   <div class="tab-panel" id="tab-geschiedenis"><div id="historyList"></div></div>
   <div class="tab-panel" id="tab-geheugenbank">
     <div id="bankListView"><div id="memoryBankList"></div></div>
-    <div id="bankPracticeView" class="bank-practice" hidden></div>
+    <div id="bankPracticeView" hidden></div>
   </div>
 </div>
 <div class="word-tooltip" id="wordTooltip"></div>

@@ -550,12 +550,12 @@ function renderPracticeCard() {
 
   if (practiceIdx >= practiceQueue.length) {
     container.innerHTML =
-      `<div class="practice-done">` +
+      `<div class="bank-practice-inner"><div class="practice-done">` +
       `<div class="practice-done-title">Klaar! Je hebt ${practiceQueue.length} woord${practiceQueue.length === 1 ? '' : 'en'} geoefend.</div>` +
       `<div class="practice-done-actions">` +
       `<button class="btn-primary" onclick="startPractice()">Nog een keer</button>` +
       `<button class="btn-secondary" onclick="exitPractice()">Terug naar lijst</button>` +
-      `</div></div>`;
+      `</div></div></div>`;
     return;
   }
 
@@ -567,13 +567,14 @@ function renderPracticeCard() {
     : `<button class="btn-primary" onclick="flipPracticeCard()">Toon vertaling</button>`;
 
   container.innerHTML =
+    `<div class="bank-practice-inner">` +
     `<div class="practice-progress">${practiceIdx + 1} / ${practiceQueue.length}</div>` +
     `<div class="practice-card"><div class="practice-sentence">${sentenceHtml}</div>${backHtml}</div>` +
     `<div class="practice-nav">` +
     `<button class="btn-back" ${practiceIdx === 0 ? 'disabled' : ''} onclick="practicePrev()">&larr; Vorige</button>` +
     `<button class="btn-secondary" onclick="exitPractice()">Stoppen</button>` +
     `<button class="btn-primary" onclick="practiceNext()">${practiceIdx === practiceQueue.length - 1 ? 'Klaar' : 'Volgende &rarr;'}</button>` +
-    `</div>`;
+    `</div></div>`;
 }
 
 // ─── History ───────────────────────────────────────────────────────────────────
