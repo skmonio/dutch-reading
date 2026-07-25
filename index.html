@@ -129,6 +129,8 @@
   .bank-sentence{font-size:.85rem;color:var(--muted);line-height:1.5;margin-top:8px}
   .bank-sentence mark{background:var(--highlight-bg);border-radius:2px;padding:0 1px;font-style:normal}
   .bank-source{font-size:.7rem;color:var(--label);margin-top:8px;text-transform:uppercase;letter-spacing:.05em}
+  .bank-word-practice{margin-top:12px;background:none;border:1px solid var(--border);color:var(--accent);padding:6px 12px;border-radius:3px;font-family:'IBM Plex Sans',sans-serif;font-size:.78rem;font-weight:600;cursor:pointer;transition:border-color .12s,background .12s}
+  .bank-word-practice:hover{border-color:var(--accent);background:var(--accent-light)}
   .bank-remove{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--label);font-size:1rem;line-height:1;cursor:pointer;padding:4px;transition:color .12s}
   .bank-remove:hover{color:var(--wrong)}
   .bank-practice-inner{display:flex;flex-direction:column;align-items:center;gap:14px}
@@ -204,6 +206,7 @@
 <div class="word-tooltip" id="wordTooltip"></div>
 <script src="texts.js"></script>
 <script src="glossary.js"></script>
+<script src="wordindex.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
