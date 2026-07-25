@@ -27,9 +27,12 @@
   .nav-btn:disabled{opacity:.35;cursor:default}
   .nav-counter{font-size:.82rem;color:var(--muted);min-width:52px;text-align:center}
   .topic-dots{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
-  .topic-dot{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--border);background:transparent;cursor:pointer;transition:background .12s,border-color .12s;padding:0}
-  .topic-dot.active{background:var(--accent);border-color:var(--accent)}
-  .topic-dot.done{background:var(--border);border-color:var(--border)}
+  .topic-dot{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--border);background:transparent;cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s;padding:0}
+  .topic-dot.score-green{background:var(--accent);border-color:var(--accent)}
+  .topic-dot.score-yellow{background:#c9a227;border-color:#c9a227}
+  .topic-dot.score-orange{background:#c9702f;border-color:#c9702f}
+  .topic-dot.score-red{background:var(--wrong);border-color:var(--wrong)}
+  .topic-dot.active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-light)}
   .passage-card{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:22px;margin-bottom:18px}
   .passage-meta{display:flex;align-items:center;gap:10px;margin-bottom:10px}
   .passage-label{font-size:.67rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--label)}
