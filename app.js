@@ -4,6 +4,8 @@ let answers = [];          // answers[qi] = chosen option index or null
 let currentQuestions = []; // shuffled copy of questions for this load
 let completedSet = new Set();
 let sessionHistory = [];
+let showEnPassage = false; // English toggle for the current passage
+let showEnQuestion = false; // English toggle for the current question/answer section
 
 function isAnswered(qi) { return answers[qi] !== null && answers[qi] !== undefined; }
 function isCorrect(qi)  { return isAnswered(qi) && answers[qi] === currentQuestions[qi].correct; }
@@ -17,11 +19,13 @@ function shuffleQuestions(questions) {
       const j = Math.floor(Math.random() * (i + 1));
       [indices[i], indices[j]] = [indices[j], indices[i]];
     }
-    return {
+    const shuffled = {
       ...q,
       options: indices.map(i => q.options[i]),
       correct: indices.indexOf(q.correct)
     };
+    if (q.en) shuffled.en = { ...q.en, options: indices.map(i => q.en.options[i]) };
+    return shuffled;
   });
 }
 
@@ -47,12 +51,17 @@ function goToNext() {
 function loadText() {
   const t = TEXTS[currentIdx];
   currentQ = 0;
-  currentQuestions = shuffleQuestions(t.questions);
+  showEnPassage = false;
+  showEnQuestion = false;
+  const questionsWithEn = t.en ? t.questions.map((q, i) => ({ ...q, en: t.en.questions[i] })) : t.questions;
+  currentQuestions = shuffleQuestions(questionsWithEn);
   answers = new Array(currentQuestions.length).fill(null);
 
   document.getElementById('topicTag').textContent    = t.topic;
-  document.getElementById('passageTitle').textContent = t.title;
-  document.getElementById('passageBody').innerHTML   = t.paragraphs.map(p => `<p>${p}</p>`).join('');
+  const passageEnBtn = document.getElementById('passageEnBtn');
+  passageEnBtn.hidden = !t.en;
+  passageEnBtn.classList.remove('active');
+  renderPassage();
   document.getElementById('scoreBar').classList.remove('show');
   document.getElementById('scoreBar').innerHTML = '';
   document.getElementById('nextTextBtn').classList.remove('show');
@@ -87,7 +96,7 @@ function renderPips() {
     pip.className = 'q-pip';
     if (isAnswered(i)) pip.classList.add(isCorrect(i) ? 'done-correct' : 'done-wrong');
     else if (i === currentQ) pip.classList.add('current');
-    pip.onclick = () => { currentQ = i; renderQuestion(); };
+    pip.onclick = () => { currentQ = i; showEnQuestion = false; renderQuestion(); };
     pip.title = `Vraag ${i + 1}`;
     c.appendChild(pip);
   });
@@ -97,16 +106,21 @@ function renderPips() {
 function renderQuestion() {
   const q = currentQuestions[currentQ];
   const already = isAnswered(currentQ);
+  const useEn = showEnQuestion && q.en;
+
+  const questionEnBtn = document.getElementById('questionEnBtn');
+  questionEnBtn.hidden = !q.en;
+  questionEnBtn.classList.toggle('active', !!useEn);
 
   document.getElementById('qNumber').textContent  = `Vraag ${currentQ + 1} van ${currentQuestions.length}`;
   document.getElementById('qTypeTag').textContent = q.type;
-  document.getElementById('qText').textContent    = q.text;
+  document.getElementById('qText').textContent    = useEn ? q.en.text : q.text;
 
   const fb = document.getElementById('qFeedback');
   const hn = document.getElementById('highlightNote');
   fb.className = 'feedback'; fb.textContent = '';
   hn.classList.remove('show');
-  clearHighlight();
+  renderPassage();
 
   const opts = document.getElementById('qOptions'); opts.innerHTML = '';
   q.options.forEach((opt, oi) => {
@@ -117,7 +131,7 @@ function renderQuestion() {
     if (already && answers[currentQ] === oi && oi !== q.correct) div.classList.add('wrong');
     const letter = document.createElement('span'); letter.className = 'option-letter';
     letter.textContent = String.fromCharCode(65 + oi);
-    const text = document.createElement('span'); text.textContent = opt;
+    const text = document.createElement('span'); text.textContent = useEn ? q.en.options[oi] : opt;
     div.appendChild(letter); div.appendChild(text);
     if (!already) div.addEventListener('click', () => selectOption(oi));
     opts.appendChild(div);
@@ -126,9 +140,12 @@ function renderQuestion() {
   if (already) {
     fb.classList.add('show');
     fb.classList.add(isCorrect(currentQ) ? 'ok' : 'nee');
-    fb.textContent = isCorrect(currentQ) ? q.feedback.ok : q.feedback.nee;
-    hn.classList.add('show');
-    applyHighlight(q.highlight);
+    const feedback = useEn ? q.en.feedback : q.feedback;
+    fb.textContent = isCorrect(currentQ) ? feedback.ok : feedback.nee;
+    if (!showEnPassage) {
+      hn.classList.add('show');
+      applyHighlight(q.highlight);
+    }
   }
   renderControls(); renderPips();
 }
@@ -148,14 +165,14 @@ function renderControls() {
   if (currentQ > 0) {
     const back = document.createElement('button'); back.className = 'btn-back';
     back.textContent = '← Vorige vraag';
-    back.onclick = () => { currentQ--; renderQuestion(); };
+    back.onclick = () => { currentQ--; showEnQuestion = false; renderQuestion(); };
     c.appendChild(back);
   }
 
   if (isAnswered(currentQ) && currentQ < currentQuestions.length - 1) {
     const next = document.createElement('button'); next.className = 'btn-primary';
     next.textContent = 'Volgende vraag →';
-    next.onclick = () => { currentQ++; renderQuestion(); };
+    next.onclick = () => { currentQ++; showEnQuestion = false; renderQuestion(); };
     c.appendChild(next);
   }
 
@@ -208,6 +225,32 @@ function restartAll() {
   loadText();
 }
 
+// ─── English toggle ──────────────────────────────────────────────────────────
+function renderPassage() {
+  const t = TEXTS[currentIdx];
+  const useEn = showEnPassage && t.en;
+  document.getElementById('passageTitle').textContent = useEn ? t.en.title : t.title;
+  const paragraphs = useEn ? t.en.paragraphs : t.paragraphs;
+  document.getElementById('passageBody').innerHTML = paragraphs.map(p => `<p>${p}</p>`).join('');
+}
+
+function togglePassageEN() {
+  const t = TEXTS[currentIdx];
+  if (!t.en) return;
+  showEnPassage = !showEnPassage;
+  document.getElementById('passageEnBtn').classList.toggle('active', showEnPassage);
+  renderPassage();
+  const q = currentQuestions[currentQ];
+  if (isAnswered(currentQ) && !showEnPassage) applyHighlight(q.highlight);
+}
+
+function toggleQuestionEN() {
+  const q = currentQuestions[currentQ];
+  if (!q.en) return;
+  showEnQuestion = !showEnQuestion;
+  renderQuestion();
+}
+
 // ─── Highlight ─────────────────────────────────────────────────────────────────
 function applyHighlight(phrase) {
   if (!phrase) return;
@@ -220,11 +263,6 @@ function applyHighlight(phrase) {
       setTimeout(() => p.querySelector('mark')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
     }
   });
-}
-
-function clearHighlight() {
-  const t = TEXTS[currentIdx];
-  document.getElementById('passageBody').innerHTML = t.paragraphs.map(p => `<p>${p}</p>`).join('');
 }
 
 // ─── History ───────────────────────────────────────────────────────────────────

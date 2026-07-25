@@ -102,6 +102,12 @@
   .hq-list{display:flex;flex-direction:column;gap:5px;margin-top:8px}
   .hq{font-size:.79rem;color:var(--muted);display:flex;align-items:flex-start;gap:7px;line-height:1.4}
   .hq-icon{flex-shrink:0}.hq-icon.ok{color:var(--accent)}.hq-icon.nee{color:var(--wrong)}
+  .en-toggle-btn{font-size:.64rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--surface);border:1px solid var(--border);padding:3px 9px;border-radius:10px;cursor:pointer;transition:background .12s,border-color .12s,color .12s;flex-shrink:0}
+  .en-toggle-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .en-toggle-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .en-toggle-btn[hidden]{display:none}
+  .passage-meta .en-toggle-btn{margin-left:auto}
+  .meta-right{display:flex;align-items:center;gap:8px}
 </style>
 </head>
 <body>
@@ -130,7 +136,7 @@
     </div>
     <div id="exerciseArea">
       <div class="passage-card">
-        <div class="passage-meta"><span class="passage-label">Tekst &mdash; lees aandachtig</span><span class="topic-tag" id="topicTag"></span></div>
+        <div class="passage-meta"><span class="passage-label">Tekst &mdash; lees aandachtig</span><span class="topic-tag" id="topicTag"></span><button class="en-toggle-btn" id="passageEnBtn" onclick="togglePassageEN()">EN</button></div>
         <div class="passage-title" id="passageTitle"></div>
         <div class="passage-text" id="passageBody"></div>
       </div>
@@ -138,7 +144,10 @@
       <div class="question-card">
         <div class="question-meta">
           <span class="question-number" id="qNumber"></span>
-          <span class="question-type-tag" id="qTypeTag"></span>
+          <div class="meta-right">
+            <span class="question-type-tag" id="qTypeTag"></span>
+            <button class="en-toggle-btn" id="questionEnBtn" onclick="toggleQuestionEN()">EN</button>
+          </div>
         </div>
         <div class="question-text" id="qText"></div>
         <div class="options" id="qOptions"></div>
