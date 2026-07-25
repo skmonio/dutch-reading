@@ -6,6 +6,8 @@ let completedSet = new Set();
 let sessionHistory = [];
 let showEnPassage = false; // English toggle for the current passage
 let showEnQuestion = false; // English toggle for the current question/answer section
+let memoryBank = [];       // saved words for later practice, persisted to localStorage
+let lastWordTap = { span: null, time: 0 };
 
 function isAnswered(qi) { return answers[qi] !== null && answers[qi] !== undefined; }
 function isCorrect(qi)  { return isAnswered(qi) && answers[qi] === currentQuestions[qi].correct; }
@@ -36,6 +38,7 @@ function switchTab(name, btn) {
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
   if (name === 'geschiedenis') renderHistory();
+  if (name === 'geheugenbank') renderMemoryBank();
 }
 
 // ─── Text navigation ──────────────────────────────────────────────────────────
@@ -114,11 +117,11 @@ function renderQuestion() {
 
   document.getElementById('qNumber').textContent  = `Vraag ${currentQ + 1} van ${currentQuestions.length}`;
   document.getElementById('qTypeTag').textContent = q.type;
-  document.getElementById('qText').textContent    = useEn ? q.en.text : q.text;
+  document.getElementById('qText').innerHTML      = tappableOrPlain(useEn ? q.en.text : q.text, useEn);
 
   const fb = document.getElementById('qFeedback');
   const hn = document.getElementById('highlightNote');
-  fb.className = 'feedback'; fb.textContent = '';
+  fb.className = 'feedback'; fb.innerHTML = '';
   hn.classList.remove('show');
   renderPassage();
 
@@ -131,7 +134,11 @@ function renderQuestion() {
     if (already && answers[currentQ] === oi && oi !== q.correct) div.classList.add('wrong');
     const letter = document.createElement('span'); letter.className = 'option-letter';
     letter.textContent = String.fromCharCode(65 + oi);
-    const text = document.createElement('span'); text.textContent = useEn ? q.en.options[oi] : opt;
+    const text = document.createElement('span');
+    const optDisplay = useEn ? q.en.options[oi] : opt;
+    // Words only become tappable once answered — before that the whole option
+    // must stay a single click target so tapping a word doesn't eat the answer tap.
+    text.innerHTML = (useEn || !already) ? escapeHtml(optDisplay) : renderTappableText(optDisplay);
     div.appendChild(letter); div.appendChild(text);
     if (!already) div.addEventListener('click', () => selectOption(oi));
     opts.appendChild(div);
@@ -141,7 +148,8 @@ function renderQuestion() {
     fb.classList.add('show');
     fb.classList.add(isCorrect(currentQ) ? 'ok' : 'nee');
     const feedback = useEn ? q.en.feedback : q.feedback;
-    fb.textContent = isCorrect(currentQ) ? feedback.ok : feedback.nee;
+    const feedbackText = isCorrect(currentQ) ? feedback.ok : feedback.nee;
+    fb.innerHTML = tappableOrPlain(feedbackText, useEn);
     if (!showEnPassage) {
       hn.classList.add('show');
       applyHighlight(q.highlight);
@@ -225,13 +233,73 @@ function restartAll() {
   loadText();
 }
 
+// ─── Tap-to-translate ─────────────────────────────────────────────────────────
+const WORD_RE = /[A-Za-zÀ-ÖØ-öø-ÿ]+(?:['’-][A-Za-zÀ-ÖØ-öø-ÿ]+)*/g;
+const SENTENCE_RE = /[^.!?]+[.!?]*/g;
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function sentenceSpans(text) {
+  const spans = [];
+  SENTENCE_RE.lastIndex = 0;
+  let m;
+  while ((m = SENTENCE_RE.exec(text))) {
+    if (m[0].trim()) spans.push({ start: m.index, end: m.index + m[0].length, text: m[0].trim() });
+  }
+  return spans;
+}
+
+function sentenceAt(spans, offset) {
+  for (const s of spans) if (offset >= s.start && offset < s.end) return s.text;
+  return spans.length ? spans[spans.length - 1].text : '';
+}
+
+// Renders `text` as HTML with every Dutch word wrapped in a tappable span that
+// carries its own containing sentence (for the memory-bank save). When
+// markStart/markEnd are given, that character range is additionally wrapped
+// in <mark> — used to keep answer-highlighting compatible with tap-to-translate.
+function renderTappableText(text, markStart, markEnd) {
+  const spans = sentenceSpans(text);
+  const pieces = [];
+  let last = 0;
+  WORD_RE.lastIndex = 0;
+  let m;
+  while ((m = WORD_RE.exec(text))) {
+    if (m.index > last) pieces.push({ start: last, end: m.index, html: escapeHtml(text.slice(last, m.index)) });
+    const word = m[0];
+    const lw = word.toLowerCase();
+    const sent = sentenceAt(spans, m.index);
+    pieces.push({
+      start: m.index, end: m.index + word.length,
+      html: `<span class="tapword" data-w="${escapeHtml(lw)}" data-s="${escapeHtml(sent)}">${escapeHtml(word)}</span>`
+    });
+    last = m.index + word.length;
+  }
+  if (last < text.length) pieces.push({ start: last, end: text.length, html: escapeHtml(text.slice(last)) });
+
+  if (markStart == null) return pieces.map(p => p.html).join('');
+
+  const pre  = pieces.filter(p => p.end <= markStart).map(p => p.html).join('');
+  const mid  = pieces.filter(p => p.start >= markStart && p.end <= markEnd).map(p => p.html).join('');
+  const post = pieces.filter(p => p.start >= markEnd).map(p => p.html).join('');
+  return pre + (mid ? `<mark>${mid}</mark>` : '') + post;
+}
+
+function tappableOrPlain(text, useEn) {
+  return useEn ? escapeHtml(text) : renderTappableText(text);
+}
+
 // ─── English toggle ──────────────────────────────────────────────────────────
 function renderPassage() {
   const t = TEXTS[currentIdx];
   const useEn = showEnPassage && t.en;
-  document.getElementById('passageTitle').textContent = useEn ? t.en.title : t.title;
+  hideWordTooltip();
+  const titleEl = document.getElementById('passageTitle');
+  titleEl.innerHTML = tappableOrPlain(useEn ? t.en.title : t.title, useEn);
   const paragraphs = useEn ? t.en.paragraphs : t.paragraphs;
-  document.getElementById('passageBody').innerHTML = paragraphs.map(p => `<p>${p}</p>`).join('');
+  document.getElementById('passageBody').innerHTML = paragraphs.map(p => `<p>${tappableOrPlain(p, useEn)}</p>`).join('');
 }
 
 function togglePassageEN() {
@@ -254,15 +322,158 @@ function toggleQuestionEN() {
 // ─── Highlight ─────────────────────────────────────────────────────────────────
 function applyHighlight(phrase) {
   if (!phrase) return;
+  const t = TEXTS[currentIdx];
+  const lower = phrase.toLowerCase();
   const body = document.getElementById('passageBody');
-  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(`(${escaped})`, 'i');
-  body.querySelectorAll('p').forEach(p => {
-    if (regex.test(p.textContent)) {
-      p.innerHTML = p.textContent.replace(regex, '<mark>$1</mark>');
-      setTimeout(() => p.querySelector('mark')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
-    }
+  t.paragraphs.forEach((text, i) => {
+    const start = text.toLowerCase().indexOf(lower);
+    if (start === -1) return;
+    const p = body.children[i];
+    if (!p) return;
+    p.innerHTML = renderTappableText(text, start, start + phrase.length);
+    setTimeout(() => p.querySelector('mark')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
   });
+}
+
+// ─── Word tooltip ─────────────────────────────────────────────────────────────
+function glossFor(key) {
+  return (typeof GLOSSARY !== 'undefined' && GLOSSARY[key]) || '(geen vertaling gevonden)';
+}
+
+function positionWordTooltip(tooltip, span) {
+  const rect = span.getBoundingClientRect();
+  const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+  let left = rect.left + rect.width / 2 - tw / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+  let top = rect.top - th - 8;
+  if (top < 8) top = rect.bottom + 8;
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function showWordTooltip(span) {
+  document.querySelectorAll('.tapword.tapped').forEach(s => s.classList.remove('tapped'));
+  span.classList.add('tapped');
+  const tooltip = document.getElementById('wordTooltip');
+  tooltip.innerHTML =
+    `<span class="wt-word">${escapeHtml(span.textContent)}</span>` +
+    `<span class="wt-gloss">${escapeHtml(glossFor(span.dataset.w))}</span>` +
+    `<span class="wt-hint">Tik nog een keer om op te slaan</span>`;
+  tooltip.classList.add('show');
+  positionWordTooltip(tooltip, span);
+}
+
+function hideWordTooltip() {
+  const tooltip = document.getElementById('wordTooltip');
+  tooltip.classList.remove('show');
+  document.querySelectorAll('.tapword.tapped').forEach(s => s.classList.remove('tapped'));
+}
+
+function saveWord(span) {
+  const key = span.dataset.w;
+  const sentence = span.dataset.s;
+  const t = TEXTS[currentIdx];
+  const tooltip = document.getElementById('wordTooltip');
+  const already = memoryBank.some(e => e.key === key && e.sentence === sentence);
+
+  if (already) {
+    tooltip.innerHTML =
+      `<span class="wt-word">${escapeHtml(span.textContent)}</span>` +
+      `<span class="wt-saved">Al opgeslagen in de geheugenbank</span>`;
+  } else {
+    memoryBank.unshift({
+      word: span.textContent, key, gloss: glossFor(key), sentence,
+      sourceTitle: t.title, topic: t.topic, addedAt: Date.now()
+    });
+    saveMemoryBank();
+    span.classList.add('saved');
+    tooltip.innerHTML =
+      `<span class="wt-word">${escapeHtml(span.textContent)}</span>` +
+      `<span class="wt-saved">&#10003; Opgeslagen in de geheugenbank</span>`;
+  }
+  tooltip.classList.add('show');
+  positionWordTooltip(tooltip, span);
+  setTimeout(hideWordTooltip, 1400);
+}
+
+// Capture phase so a tap on a word inside an answer option is caught (and its
+// propagation stopped) before the option's own click-to-select listener fires.
+document.addEventListener('click', (e) => {
+  const span = e.target.closest('.tapword');
+  if (!span) {
+    if (!e.target.closest('#wordTooltip')) hideWordTooltip();
+    return;
+  }
+  e.stopPropagation();
+  const now = Date.now();
+  if (lastWordTap.span === span && now - lastWordTap.time < 450) {
+    saveWord(span);
+    lastWordTap = { span: null, time: 0 };
+  } else {
+    showWordTooltip(span);
+    lastWordTap = { span, time: now };
+  }
+}, true);
+
+// ─── Memory bank ──────────────────────────────────────────────────────────────
+function loadMemoryBank() {
+  try {
+    memoryBank = JSON.parse(localStorage.getItem('memoryBank') || '[]');
+  } catch (e) { memoryBank = []; }
+  updateBankCount();
+}
+
+function saveMemoryBank() {
+  localStorage.setItem('memoryBank', JSON.stringify(memoryBank));
+  updateBankCount();
+}
+
+function updateBankCount() {
+  document.getElementById('bankCount').textContent = memoryBank.length;
+}
+
+function removeFromMemoryBank(i) {
+  memoryBank.splice(i, 1);
+  saveMemoryBank();
+  renderMemoryBank();
+}
+
+function clearMemoryBank() {
+  if (memoryBank.length && !confirm('Alle opgeslagen woorden verwijderen?')) return;
+  memoryBank = [];
+  saveMemoryBank();
+  renderMemoryBank();
+}
+
+function renderMemoryBank() {
+  const list = document.getElementById('memoryBankList'); list.innerHTML = '';
+  if (memoryBank.length === 0) {
+    list.innerHTML = '<div class="bank-empty"><strong>Nog geen woorden opgeslagen</strong>Tik op een woord in een tekst en tik er nogmaals op om het hier te bewaren.</div>';
+    return;
+  }
+
+  const toolbar = document.createElement('div'); toolbar.className = 'bank-toolbar';
+  const clearBtn = document.createElement('button'); clearBtn.className = 'btn-secondary';
+  clearBtn.textContent = 'Wis alles';
+  clearBtn.onclick = clearMemoryBank;
+  toolbar.appendChild(clearBtn);
+  list.appendChild(toolbar);
+
+  const wrap = document.createElement('div'); wrap.className = 'bank-list';
+  memoryBank.forEach((entry, i) => {
+    const card = document.createElement('div'); card.className = 'bank-card';
+    const wordRe = new RegExp(`(${entry.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
+    const sentenceHtml = escapeHtml(entry.sentence).replace(wordRe, '<mark>$1</mark>');
+    card.innerHTML =
+      `<button class="bank-remove" title="Verwijderen">&times;</button>` +
+      `<div class="bank-card-header"><span class="bank-word">${escapeHtml(entry.word)}</span></div>` +
+      `<div class="bank-gloss">${escapeHtml(entry.gloss || '(geen vertaling)')}</div>` +
+      `<div class="bank-sentence">${sentenceHtml}</div>` +
+      `<div class="bank-source">${escapeHtml(entry.topic)} &middot; ${escapeHtml(entry.sourceTitle)}</div>`;
+    card.querySelector('.bank-remove').onclick = () => removeFromMemoryBank(i);
+    wrap.appendChild(card);
+  });
+  list.appendChild(wrap);
 }
 
 // ─── History ───────────────────────────────────────────────────────────────────
@@ -284,4 +495,5 @@ function renderHistory() {
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
+loadMemoryBank();
 loadText();

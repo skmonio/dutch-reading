@@ -108,6 +108,29 @@
   .en-toggle-btn[hidden]{display:none}
   .passage-meta .en-toggle-btn{margin-left:auto}
   .meta-right{display:flex;align-items:center;gap:8px}
+  .tapword{cursor:pointer;border-radius:2px;padding:0 1px;touch-action:manipulation;transition:background .1s}
+  .tapword:hover{background:var(--accent-light)}
+  .tapword.tapped{background:var(--accent-light)}
+  .tapword.saved{background:var(--accent-light);box-shadow:inset 0 -2px 0 var(--accent)}
+  .word-tooltip{display:none;position:fixed;z-index:50;max-width:260px;background:var(--text);color:var(--surface);border-radius:5px;padding:10px 12px;font-size:.82rem;line-height:1.4;box-shadow:0 6px 20px rgba(0,0,0,.22)}
+  .word-tooltip.show{display:block}
+  .word-tooltip .wt-word{font-family:'IBM Plex Serif',Georgia,serif;font-weight:600;font-size:.9rem;display:block;margin-bottom:2px}
+  .word-tooltip .wt-gloss{color:#e8e5dd}
+  .word-tooltip .wt-hint{display:block;margin-top:6px;font-size:.7rem;color:#b9b4a7;font-style:italic}
+  .word-tooltip .wt-saved{color:#9ed6ae;font-weight:600;font-style:normal}
+  .bank-empty{text-align:center;padding:40px 24px;color:var(--muted);font-size:.88rem;background:var(--surface);border:1px solid var(--border);border-radius:4px}
+  .bank-empty strong{display:block;font-family:'IBM Plex Serif',serif;font-size:1rem;color:var(--text);margin-bottom:6px}
+  .bank-toolbar{display:flex;justify-content:flex-end;margin-bottom:12px}
+  .bank-list{display:flex;flex-direction:column;gap:12px}
+  .bank-card{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px 16px;position:relative}
+  .bank-card-header{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .bank-word{font-family:'IBM Plex Serif',serif;font-size:1rem;font-weight:600}
+  .bank-gloss{font-size:.83rem;color:var(--accent);margin-top:2px}
+  .bank-sentence{font-size:.85rem;color:var(--muted);line-height:1.5;margin-top:8px}
+  .bank-sentence mark{background:var(--highlight-bg);border-radius:2px;padding:0 1px;font-style:normal}
+  .bank-source{font-size:.7rem;color:var(--label);margin-top:8px;text-transform:uppercase;letter-spacing:.05em}
+  .bank-remove{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--label);font-size:1rem;line-height:1;cursor:pointer;padding:4px;transition:color .12s}
+  .bank-remove:hover{color:var(--wrong)}
 </style>
 </head>
 <body>
@@ -118,6 +141,7 @@
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('oefening',this)">Oefening</button>
     <button class="tab-btn" onclick="switchTab('geschiedenis',this)">Geschiedenis <span class="count-badge" id="histCount">0</span></button>
+    <button class="tab-btn" onclick="switchTab('geheugenbank',this)">Geheugenbank <span class="count-badge" id="bankCount">0</span></button>
   </div>
   <div class="tab-panel active" id="tab-oefening">
     <div class="picker-header">
@@ -160,8 +184,11 @@
     </div>
   </div>
   <div class="tab-panel" id="tab-geschiedenis"><div id="historyList"></div></div>
+  <div class="tab-panel" id="tab-geheugenbank"><div id="memoryBankList"></div></div>
 </div>
+<div class="word-tooltip" id="wordTooltip"></div>
 <script src="texts.js"></script>
+<script src="glossary.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
