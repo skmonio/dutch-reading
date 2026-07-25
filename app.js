@@ -2,8 +2,7 @@
 let currentIdx = 0, currentQ = 0;
 let answers = [];          // answers[qi] = chosen option index or null
 let currentQuestions = []; // shuffled copy of questions for this load
-let completedSet = new Set();
-let totalScore = 0, totalQuestionsAnswered = 0; // running tally across all completed texts
+let textScores = {}; // { [textIdx]: {score, total} } — last result per text, persisted to localStorage
 let showEnPassage = false; // English toggle for the current passage
 let showEnQuestion = false; // English toggle for the current question/answer section
 let memoryBank = [];       // saved words for later practice, persisted to localStorage
@@ -45,11 +44,20 @@ function switchTab(name, btn) {
 }
 
 // ─── Text navigation ──────────────────────────────────────────────────────────
-function goTo(idx) { if (idx < 0 || idx >= TEXTS.length) return; currentIdx = idx; loadText(); }
+function goTo(idx) {
+  if (idx < 0 || idx >= TEXTS.length) return;
+  const prev = textScores[idx];
+  if (prev) {
+    const again = confirm(`Je scoorde eerder ${prev.score}/${prev.total} op deze tekst. Opnieuw proberen?`);
+    if (!again) return;
+  }
+  currentIdx = idx;
+  loadText();
+}
 function goToNext() {
   for (let i = 1; i <= TEXTS.length; i++) {
     const c = (currentIdx + i) % TEXTS.length;
-    if (!completedSet.has(c)) { goTo(c); return; }
+    if (!(c in textScores)) { goTo(c); return; }
   }
   goTo((currentIdx + 1) % TEXTS.length);
 }
@@ -82,13 +90,22 @@ function updateNav() {
   document.getElementById('nextBtn').disabled = currentIdx === TEXTS.length - 1;
 }
 
+function scoreClass(score, total) {
+  const pct = total > 0 ? score / total : 0;
+  if (pct >= 1)   return 'score-green';
+  if (pct >= 0.8) return 'score-yellow';
+  if (pct >= 0.6) return 'score-orange';
+  return 'score-red';
+}
+
 function renderDots() {
   const c = document.getElementById('topicDots'); c.innerHTML = '';
   TEXTS.forEach((t, i) => {
     const d = document.createElement('button');
     d.className = 'topic-dot'; d.title = t.title;
-    if (i === currentIdx)         d.classList.add('active');
-    else if (completedSet.has(i)) d.classList.add('done');
+    if (i === currentIdx) d.classList.add('active');
+    const s = textScores[i];
+    if (s) d.classList.add(scoreClass(s.score, s.total));
     d.onclick = () => goTo(i);
     c.appendChild(d);
   });
@@ -203,25 +220,29 @@ function finalise() {
   const bar = document.getElementById('scoreBar'); bar.classList.add('show');
   bar.innerHTML = `<div class="score-number">${score}/${total}</div><div class="score-text">${pct}% goed — ${comment}</div>`;
 
-  completedSet.add(currentIdx); renderDots();
-  if (completedSet.size < TEXTS.length) document.getElementById('nextTextBtn').classList.add('show');
+  textScores[currentIdx] = { score, total };
+  saveTextScores();
+  renderDots();
 
-  totalScore += score;
-  totalQuestionsAnswered += total;
-  if (completedSet.size === TEXTS.length) showAllDone();
+  const allDone = Object.keys(textScores).length === TEXTS.length;
+  if (!allDone) document.getElementById('nextTextBtn').classList.add('show');
+  if (allDone) showAllDone();
 }
 
 function showAllDone() {
-  const pct = Math.round((totalScore / totalQuestionsAnswered) * 100);
+  let ts = 0, tp = 0;
+  Object.values(textScores).forEach(s => { ts += s.score; tp += s.total; });
+  const pct = Math.round((ts / tp) * 100);
   const c = pct >= 80 ? 'Geweldig gedaan!' : pct >= 60 ? 'Goed werk! Blijf oefenen.' : 'Goed dat je alle teksten hebt gedaan!';
-  document.getElementById('allDoneScore').textContent = `${totalScore}/${totalQuestionsAnswered}`;
+  document.getElementById('allDoneScore').textContent = `${ts}/${tp}`;
   document.getElementById('allDoneText').textContent  = `${pct}% correct over alle teksten — ${c}`;
   document.getElementById('allDone').classList.add('show');
 }
 
 function restartAll() {
-  completedSet.clear(); currentIdx = 0;
-  totalScore = 0; totalQuestionsAnswered = 0;
+  textScores = {};
+  saveTextScores();
+  currentIdx = 0;
   document.getElementById('allDone').classList.remove('show');
   loadText();
 }
@@ -447,6 +468,17 @@ document.addEventListener('click', (e) => {
   }
 }, true);
 
+// ─── Per-text scores ──────────────────────────────────────────────────────────
+function loadTextScores() {
+  try {
+    textScores = JSON.parse(localStorage.getItem('textScores') || '{}');
+  } catch (e) { textScores = {}; }
+}
+
+function saveTextScores() {
+  localStorage.setItem('textScores', JSON.stringify(textScores));
+}
+
 // ─── Memory bank ──────────────────────────────────────────────────────────────
 function loadMemoryBank() {
   try {
@@ -629,5 +661,6 @@ function renderPracticeCard() {
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
+loadTextScores();
 loadMemoryBank();
 loadText();
