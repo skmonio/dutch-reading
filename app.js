@@ -260,8 +260,26 @@ function sentenceAt(spans, offset) {
   return spans.length ? spans[spans.length - 1].text : '';
 }
 
-function isWordSaved(key, sentence) {
-  return memoryBank.some(e => e.key === key && e.sentence === sentence);
+function isWordSaved(key) {
+  return memoryBank.some(e => e.key === key);
+}
+
+// All known sentences a word appears in across the whole corpus (used for
+// practice variety), sourced from wordindex.js, always including the sentence
+// it was originally saved from even if wordindex.js doesn't have it.
+function sentencesForWord(entry) {
+  const fromIndex = (typeof WORD_INDEX !== 'undefined' && WORD_INDEX[entry.key]) || [];
+  const seen = new Set();
+  const out = [];
+  const add = (sentence, textIdx) => {
+    if (!sentence || seen.has(sentence)) return;
+    seen.add(sentence);
+    const t = textIdx != null ? TEXTS[textIdx] : null;
+    out.push({ sentence, sourceTitle: t ? t.title : entry.sourceTitle, topic: t ? t.topic : entry.topic });
+  };
+  add(entry.sentence, null);
+  fromIndex.forEach(o => add(o.s, o.t));
+  return out;
 }
 
 // Renders `text` as HTML with every Dutch word wrapped in a tappable span that
@@ -279,7 +297,7 @@ function renderTappableText(text, markStart, markEnd) {
     const word = m[0];
     const lw = word.toLowerCase();
     const sent = sentenceAt(spans, m.index);
-    const savedCls = isWordSaved(lw, sent) ? ' saved' : '';
+    const savedCls = isWordSaved(lw) ? ' saved' : '';
     pieces.push({
       start: m.index, end: m.index + word.length,
       html: `<span class="tapword${savedCls}" data-w="${escapeHtml(lw)}" data-s="${escapeHtml(sent)}">${escapeHtml(word)}</span>`
@@ -394,7 +412,7 @@ function saveWord(span) {
   const wordDisplay = span.textContent;
   const t = TEXTS[currentIdx];
   const tooltip = document.getElementById('wordTooltip');
-  const already = memoryBank.some(e => e.key === key && e.sentence === sentence);
+  const already = memoryBank.some(e => e.key === key);
 
   if (already) {
     tooltip.innerHTML =
@@ -490,13 +508,19 @@ function renderMemoryBank() {
     const card = document.createElement('div'); card.className = 'bank-card';
     const wordRe = new RegExp(`(${entry.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
     const sentenceHtml = escapeHtml(entry.sentence).replace(wordRe, '<mark>$1</mark>');
+    const otherSentenceCount = sentencesForWord(entry).length - 1;
     card.innerHTML =
       `<button class="bank-remove" title="Verwijderen">&times;</button>` +
       `<div class="bank-card-header"><span class="bank-word">${escapeHtml(entry.word)}</span></div>` +
       `<div class="bank-gloss">${escapeHtml(entry.gloss || '(geen vertaling)')}</div>` +
       `<div class="bank-sentence">${sentenceHtml}</div>` +
-      `<div class="bank-source">${escapeHtml(entry.topic)} &middot; ${escapeHtml(entry.sourceTitle)}</div>`;
+      `<div class="bank-source">${escapeHtml(entry.topic)} &middot; ${escapeHtml(entry.sourceTitle)}</div>` +
+      (otherSentenceCount > 0
+        ? `<button class="bank-word-practice">Oefen dit woord (${otherSentenceCount + 1} zinnen) &rarr;</button>`
+        : '');
     card.querySelector('.bank-remove').onclick = () => removeFromMemoryBank(i);
+    const wordPracticeBtn = card.querySelector('.bank-word-practice');
+    if (wordPracticeBtn) wordPracticeBtn.onclick = () => startPracticeWord(entry.key);
     wrap.appendChild(card);
   });
   list.appendChild(wrap);
@@ -506,6 +530,7 @@ function renderMemoryBank() {
 let practiceQueue = [];
 let practiceIdx = 0;
 let practiceFlipped = false;
+let practiceLabel = ''; // shown on the completion screen
 
 function shuffled(arr) {
   const out = [...arr];
@@ -516,9 +541,33 @@ function shuffled(arr) {
   return out;
 }
 
+// Whole list: one random sentence per word, so the same words come up in
+// different contexts across sessions instead of always the sentence they were
+// originally saved from.
 function startPractice() {
   if (!memoryBank.length) return;
-  practiceQueue = shuffled(memoryBank);
+  practiceQueue = shuffled(memoryBank).map(entry => {
+    const options = sentencesForWord(entry);
+    const pick = options[Math.floor(Math.random() * options.length)];
+    return { word: entry.word, key: entry.key, gloss: entry.gloss, ...pick };
+  });
+  practiceLabel = 'list';
+  practiceIdx = 0;
+  practiceFlipped = false;
+  document.getElementById('bankListView').hidden = true;
+  document.getElementById('bankPracticeView').hidden = false;
+  renderPracticeCard();
+}
+
+// Single word: drill through every sentence that word appears in across the
+// whole corpus (shuffled), so you see it used several different ways.
+function startPracticeWord(key) {
+  const entry = memoryBank.find(e => e.key === key);
+  if (!entry) return;
+  practiceQueue = shuffled(sentencesForWord(entry)).map(pick => ({
+    word: entry.word, key: entry.key, gloss: entry.gloss, ...pick
+  }));
+  practiceLabel = entry.word;
   practiceIdx = 0;
   practiceFlipped = false;
   document.getElementById('bankListView').hidden = true;
@@ -549,13 +598,21 @@ function renderPracticeCard() {
   const container = document.getElementById('bankPracticeView');
 
   if (practiceIdx >= practiceQueue.length) {
+    const isWordDrill = practiceLabel !== 'list';
+    const wordKey = practiceQueue.length ? practiceQueue[0].key : null;
+    const doneTitle = isWordDrill
+      ? `Klaar! Je hebt "${escapeHtml(practiceLabel)}" in ${practiceQueue.length} zin${practiceQueue.length === 1 ? '' : 'nen'} geoefend.`
+      : `Klaar! Je hebt ${practiceQueue.length} woord${practiceQueue.length === 1 ? '' : 'en'} geoefend.`;
     container.innerHTML =
       `<div class="bank-practice-inner"><div class="practice-done">` +
-      `<div class="practice-done-title">Klaar! Je hebt ${practiceQueue.length} woord${practiceQueue.length === 1 ? '' : 'en'} geoefend.</div>` +
+      `<div class="practice-done-title">${doneTitle}</div>` +
       `<div class="practice-done-actions">` +
-      `<button class="btn-primary" onclick="startPractice()">Nog een keer</button>` +
+      `<button class="btn-primary practice-restart-btn">Nog een keer</button>` +
       `<button class="btn-secondary" onclick="exitPractice()">Terug naar lijst</button>` +
       `</div></div></div>`;
+    // Bound in JS rather than inlined into an onclick attribute string, since
+    // Dutch words can contain apostrophes (e.g. "z'n") that would break the markup.
+    container.querySelector('.practice-restart-btn').onclick = isWordDrill ? () => startPracticeWord(wordKey) : startPractice;
     return;
   }
 
