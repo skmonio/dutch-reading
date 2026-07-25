@@ -38,7 +38,11 @@ function switchTab(name, btn) {
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
   if (name === 'geschiedenis') renderHistory();
-  if (name === 'geheugenbank') renderMemoryBank();
+  if (name === 'geheugenbank') {
+    document.getElementById('bankPracticeView').hidden = true;
+    document.getElementById('bankListView').hidden = false;
+    renderMemoryBank();
+  }
 }
 
 // ─── Text navigation ──────────────────────────────────────────────────────────
@@ -256,6 +260,10 @@ function sentenceAt(spans, offset) {
   return spans.length ? spans[spans.length - 1].text : '';
 }
 
+function isWordSaved(key, sentence) {
+  return memoryBank.some(e => e.key === key && e.sentence === sentence);
+}
+
 // Renders `text` as HTML with every Dutch word wrapped in a tappable span that
 // carries its own containing sentence (for the memory-bank save). When
 // markStart/markEnd are given, that character range is additionally wrapped
@@ -271,9 +279,10 @@ function renderTappableText(text, markStart, markEnd) {
     const word = m[0];
     const lw = word.toLowerCase();
     const sent = sentenceAt(spans, m.index);
+    const savedCls = isWordSaved(lw, sent) ? ' saved' : '';
     pieces.push({
       start: m.index, end: m.index + word.length,
-      html: `<span class="tapword" data-w="${escapeHtml(lw)}" data-s="${escapeHtml(sent)}">${escapeHtml(word)}</span>`
+      html: `<span class="tapword${savedCls}" data-w="${escapeHtml(lw)}" data-s="${escapeHtml(sent)}">${escapeHtml(word)}</span>`
     });
     last = m.index + word.length;
   }
@@ -340,8 +349,7 @@ function glossFor(key) {
   return (typeof GLOSSARY !== 'undefined' && GLOSSARY[key]) || '(geen vertaling gevonden)';
 }
 
-function positionWordTooltip(tooltip, span) {
-  const rect = span.getBoundingClientRect();
+function positionWordTooltipAtRect(tooltip, rect) {
   const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
   let left = rect.left + rect.width / 2 - tw / 2;
   left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
@@ -349,6 +357,16 @@ function positionWordTooltip(tooltip, span) {
   if (top < 8) top = rect.bottom + 8;
   tooltip.style.left = `${left}px`;
   tooltip.style.top = `${top}px`;
+}
+
+function positionWordTooltip(tooltip, span) {
+  positionWordTooltipAtRect(tooltip, span.getBoundingClientRect());
+}
+
+// Re-renders the exercise view so tapword "saved" highlighting reflects the
+// current memory bank (e.g. after a removal, the word's page highlight clears).
+function refreshTapwordSavedState() {
+  renderQuestion();
 }
 
 function showWordTooltip(span) {
@@ -370,29 +388,31 @@ function hideWordTooltip() {
 }
 
 function saveWord(span) {
+  const rect = span.getBoundingClientRect(); // capture before any re-render can detach this node
   const key = span.dataset.w;
   const sentence = span.dataset.s;
+  const wordDisplay = span.textContent;
   const t = TEXTS[currentIdx];
   const tooltip = document.getElementById('wordTooltip');
   const already = memoryBank.some(e => e.key === key && e.sentence === sentence);
 
   if (already) {
     tooltip.innerHTML =
-      `<span class="wt-word">${escapeHtml(span.textContent)}</span>` +
+      `<span class="wt-word">${escapeHtml(wordDisplay)}</span>` +
       `<span class="wt-saved">Al opgeslagen in de geheugenbank</span>`;
   } else {
     memoryBank.unshift({
-      word: span.textContent, key, gloss: glossFor(key), sentence,
+      word: wordDisplay, key, gloss: glossFor(key), sentence,
       sourceTitle: t.title, topic: t.topic, addedAt: Date.now()
     });
     saveMemoryBank();
-    span.classList.add('saved');
     tooltip.innerHTML =
-      `<span class="wt-word">${escapeHtml(span.textContent)}</span>` +
+      `<span class="wt-word">${escapeHtml(wordDisplay)}</span>` +
       `<span class="wt-saved">&#10003; Opgeslagen in de geheugenbank</span>`;
+    refreshTapwordSavedState(); // safe here: tooltip isn't shown yet
   }
   tooltip.classList.add('show');
-  positionWordTooltip(tooltip, span);
+  positionWordTooltipAtRect(tooltip, rect);
   setTimeout(hideWordTooltip, 1400);
 }
 
@@ -436,6 +456,7 @@ function removeFromMemoryBank(i) {
   memoryBank.splice(i, 1);
   saveMemoryBank();
   renderMemoryBank();
+  refreshTapwordSavedState();
 }
 
 function clearMemoryBank() {
@@ -443,6 +464,7 @@ function clearMemoryBank() {
   memoryBank = [];
   saveMemoryBank();
   renderMemoryBank();
+  refreshTapwordSavedState();
 }
 
 function renderMemoryBank() {
@@ -453,9 +475,13 @@ function renderMemoryBank() {
   }
 
   const toolbar = document.createElement('div'); toolbar.className = 'bank-toolbar';
+  const practiceBtn = document.createElement('button'); practiceBtn.className = 'btn-primary';
+  practiceBtn.textContent = 'Oefenen';
+  practiceBtn.onclick = startPractice;
   const clearBtn = document.createElement('button'); clearBtn.className = 'btn-secondary';
   clearBtn.textContent = 'Wis alles';
   clearBtn.onclick = clearMemoryBank;
+  toolbar.appendChild(practiceBtn);
   toolbar.appendChild(clearBtn);
   list.appendChild(toolbar);
 
@@ -474,6 +500,80 @@ function renderMemoryBank() {
     wrap.appendChild(card);
   });
   list.appendChild(wrap);
+}
+
+// ─── Memory bank practice (simple flip-through) ──────────────────────────────
+let practiceQueue = [];
+let practiceIdx = 0;
+let practiceFlipped = false;
+
+function shuffled(arr) {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+function startPractice() {
+  if (!memoryBank.length) return;
+  practiceQueue = shuffled(memoryBank);
+  practiceIdx = 0;
+  practiceFlipped = false;
+  document.getElementById('bankListView').hidden = true;
+  document.getElementById('bankPracticeView').hidden = false;
+  renderPracticeCard();
+}
+
+function exitPractice() {
+  document.getElementById('bankPracticeView').hidden = true;
+  document.getElementById('bankListView').hidden = false;
+  renderMemoryBank();
+}
+
+function flipPracticeCard() {
+  practiceFlipped = true;
+  renderPracticeCard();
+}
+
+function practicePrev() {
+  if (practiceIdx > 0) { practiceIdx--; practiceFlipped = false; renderPracticeCard(); }
+}
+
+function practiceNext() {
+  if (practiceIdx < practiceQueue.length) { practiceIdx++; practiceFlipped = false; renderPracticeCard(); }
+}
+
+function renderPracticeCard() {
+  const container = document.getElementById('bankPracticeView');
+
+  if (practiceIdx >= practiceQueue.length) {
+    container.innerHTML =
+      `<div class="practice-done">` +
+      `<div class="practice-done-title">Klaar! Je hebt ${practiceQueue.length} woord${practiceQueue.length === 1 ? '' : 'en'} geoefend.</div>` +
+      `<div class="practice-done-actions">` +
+      `<button class="btn-primary" onclick="startPractice()">Nog een keer</button>` +
+      `<button class="btn-secondary" onclick="exitPractice()">Terug naar lijst</button>` +
+      `</div></div>`;
+    return;
+  }
+
+  const entry = practiceQueue[practiceIdx];
+  const wordRe = new RegExp(`(${entry.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
+  const sentenceHtml = escapeHtml(entry.sentence).replace(wordRe, '<mark>$1</mark>');
+  const backHtml = practiceFlipped
+    ? `<div class="practice-answer"><span class="practice-word">${escapeHtml(entry.word)}</span><span class="practice-gloss">${escapeHtml(entry.gloss || '(geen vertaling)')}</span></div>`
+    : `<button class="btn-primary" onclick="flipPracticeCard()">Toon vertaling</button>`;
+
+  container.innerHTML =
+    `<div class="practice-progress">${practiceIdx + 1} / ${practiceQueue.length}</div>` +
+    `<div class="practice-card"><div class="practice-sentence">${sentenceHtml}</div>${backHtml}</div>` +
+    `<div class="practice-nav">` +
+    `<button class="btn-back" ${practiceIdx === 0 ? 'disabled' : ''} onclick="practicePrev()">&larr; Vorige</button>` +
+    `<button class="btn-secondary" onclick="exitPractice()">Stoppen</button>` +
+    `<button class="btn-primary" onclick="practiceNext()">${practiceIdx === practiceQueue.length - 1 ? 'Klaar' : 'Volgende &rarr;'}</button>` +
+    `</div>`;
 }
 
 // ─── History ───────────────────────────────────────────────────────────────────
