@@ -3,7 +3,7 @@ let currentIdx = 0, currentQ = 0;
 let answers = [];          // answers[qi] = chosen option index or null
 let currentQuestions = []; // shuffled copy of questions for this load
 let completedSet = new Set();
-let sessionHistory = [];
+let totalScore = 0, totalQuestionsAnswered = 0; // running tally across all completed texts
 let showEnPassage = false; // English toggle for the current passage
 let showEnQuestion = false; // English toggle for the current question/answer section
 let memoryBank = [];       // saved words for later practice, persisted to localStorage
@@ -37,7 +37,6 @@ function switchTab(name, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
-  if (name === 'geschiedenis') renderHistory();
   if (name === 'geheugenbank') {
     document.getElementById('bankPracticeView').hidden = true;
     document.getElementById('bankListView').hidden = false;
@@ -206,33 +205,23 @@ function finalise() {
 
   completedSet.add(currentIdx); renderDots();
   if (completedSet.size < TEXTS.length) document.getElementById('nextTextBtn').classList.add('show');
-  if (completedSet.size === TEXTS.length) showAllDone();
 
-  const t = TEXTS[currentIdx]; const now = new Date();
-  sessionHistory.unshift({
-    title: t.title, topic: t.topic,
-    date: now.toLocaleString('nl-NL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }),
-    score, total, pct,
-    questions: currentQuestions.map((q, i) => ({
-      text: q.text, correct: answers[i] === q.correct,
-      yourAnswer: q.options[answers[i]], rightAnswer: q.options[q.correct]
-    }))
-  });
-  document.getElementById('histCount').textContent = sessionHistory.length;
+  totalScore += score;
+  totalQuestionsAnswered += total;
+  if (completedSet.size === TEXTS.length) showAllDone();
 }
 
 function showAllDone() {
-  const ts = sessionHistory.reduce((a, e) => a + e.score, 0);
-  const tp = sessionHistory.reduce((a, e) => a + e.total, 0);
-  const pct = Math.round((ts / tp) * 100);
+  const pct = Math.round((totalScore / totalQuestionsAnswered) * 100);
   const c = pct >= 80 ? 'Geweldig gedaan!' : pct >= 60 ? 'Goed werk! Blijf oefenen.' : 'Goed dat je alle teksten hebt gedaan!';
-  document.getElementById('allDoneScore').textContent = `${ts}/${tp}`;
+  document.getElementById('allDoneScore').textContent = `${totalScore}/${totalQuestionsAnswered}`;
   document.getElementById('allDoneText').textContent  = `${pct}% correct over alle teksten — ${c}`;
   document.getElementById('allDone').classList.add('show');
 }
 
 function restartAll() {
   completedSet.clear(); currentIdx = 0;
+  totalScore = 0; totalQuestionsAnswered = 0;
   document.getElementById('allDone').classList.remove('show');
   loadText();
 }
@@ -391,10 +380,11 @@ function showWordTooltip(span) {
   document.querySelectorAll('.tapword.tapped').forEach(s => s.classList.remove('tapped'));
   span.classList.add('tapped');
   const tooltip = document.getElementById('wordTooltip');
+  const hint = isWordSaved(span.dataset.w) ? 'Tik nog een keer om te verwijderen' : 'Tik nog een keer om op te slaan';
   tooltip.innerHTML =
     `<span class="wt-word">${escapeHtml(span.textContent)}</span>` +
     `<span class="wt-gloss">${escapeHtml(glossFor(span.dataset.w))}</span>` +
-    `<span class="wt-hint">Tik nog een keer om op te slaan</span>`;
+    `<span class="wt-hint">${hint}</span>`;
   tooltip.classList.add('show');
   positionWordTooltip(tooltip, span);
 }
@@ -405,6 +395,7 @@ function hideWordTooltip() {
   document.querySelectorAll('.tapword.tapped').forEach(s => s.classList.remove('tapped'));
 }
 
+// Double-tap toggles: save it if it isn't in the bank yet, remove it if it is.
 function saveWord(span) {
   const rect = span.getBoundingClientRect(); // capture before any re-render can detach this node
   const key = span.dataset.w;
@@ -412,12 +403,15 @@ function saveWord(span) {
   const wordDisplay = span.textContent;
   const t = TEXTS[currentIdx];
   const tooltip = document.getElementById('wordTooltip');
-  const already = memoryBank.some(e => e.key === key);
+  const existingIdx = memoryBank.findIndex(e => e.key === key);
 
-  if (already) {
+  if (existingIdx !== -1) {
+    memoryBank.splice(existingIdx, 1);
+    saveMemoryBank();
     tooltip.innerHTML =
       `<span class="wt-word">${escapeHtml(wordDisplay)}</span>` +
-      `<span class="wt-saved">Al opgeslagen in de geheugenbank</span>`;
+      `<span class="wt-removed">Verwijderd uit de geheugenbank</span>`;
+    refreshTapwordSavedState(); // safe here: tooltip isn't shown yet
   } else {
     memoryBank.unshift({
       word: wordDisplay, key, gloss: glossFor(key), sentence,
@@ -632,24 +626,6 @@ function renderPracticeCard() {
     `<button class="btn-secondary" onclick="exitPractice()">Stoppen</button>` +
     `<button class="btn-primary" onclick="practiceNext()">${practiceIdx === practiceQueue.length - 1 ? 'Klaar' : 'Volgende &rarr;'}</button>` +
     `</div></div>`;
-}
-
-// ─── History ───────────────────────────────────────────────────────────────────
-function renderHistory() {
-  const list = document.getElementById('historyList'); list.innerHTML = '';
-  if (sessionHistory.length === 0) {
-    list.innerHTML = '<div class="history-empty"><strong>Nog geen oefeningen voltooid</strong>Maak een oefening af om deze hier te zien.</div>';
-    return;
-  }
-  const wrap = document.createElement('div'); wrap.className = 'history-list';
-  sessionHistory.forEach(entry => {
-    const pc = entry.pct >= 80 ? 'pill-good' : entry.pct >= 60 ? 'pill-mid' : 'pill-low';
-    const card = document.createElement('div'); card.className = 'history-card';
-    const qRows = entry.questions.map(q => `<div class="hq"><span class="hq-icon ${q.correct ? 'ok' : 'nee'}">${q.correct ? '✓' : '✗'}</span><span>${q.text}</span></div>`).join('');
-    card.innerHTML = `<div class="history-card-header"><div class="history-title">${entry.title}</div><span class="score-pill ${pc}">${entry.score}/${entry.total}</span></div><div class="history-date">${entry.topic} · ${entry.date}</div><details><summary>Bekijk vragen</summary><div class="hq-list">${qRows}</div></details>`;
-    wrap.appendChild(card);
-  });
-  list.appendChild(wrap);
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
