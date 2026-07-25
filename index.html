@@ -131,6 +131,18 @@
   .bank-source{font-size:.7rem;color:var(--label);margin-top:8px;text-transform:uppercase;letter-spacing:.05em}
   .bank-remove{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--label);font-size:1rem;line-height:1;cursor:pointer;padding:4px;transition:color .12s}
   .bank-remove:hover{color:var(--wrong)}
+  .bank-practice{display:flex;flex-direction:column;align-items:center;gap:14px}
+  .practice-progress{font-size:.72rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--label)}
+  .practice-card{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:32px 28px;width:100%;max-width:440px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:20px}
+  .practice-sentence{font-family:'IBM Plex Serif',serif;font-size:1.05rem;line-height:1.6;color:var(--text)}
+  .practice-sentence mark{background:var(--highlight-bg);border-radius:2px;padding:0 1px;font-style:normal}
+  .practice-answer{display:flex;flex-direction:column;gap:4px}
+  .practice-word{font-family:'IBM Plex Serif',serif;font-size:1.3rem;font-weight:600;color:var(--accent)}
+  .practice-gloss{font-size:.95rem;color:var(--muted)}
+  .practice-nav{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .practice-done{text-align:center;padding:40px 24px;background:var(--surface);border:1px solid var(--border);border-radius:4px;max-width:440px;width:100%}
+  .practice-done-title{font-family:'IBM Plex Serif',serif;font-size:1.05rem;font-weight:600;margin-bottom:16px;color:var(--text);line-height:1.4}
+  .practice-done-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -184,7 +196,10 @@
     </div>
   </div>
   <div class="tab-panel" id="tab-geschiedenis"><div id="historyList"></div></div>
-  <div class="tab-panel" id="tab-geheugenbank"><div id="memoryBankList"></div></div>
+  <div class="tab-panel" id="tab-geheugenbank">
+    <div id="bankListView"><div id="memoryBankList"></div></div>
+    <div id="bankPracticeView" class="bank-practice" hidden></div>
+  </div>
 </div>
 <div class="word-tooltip" id="wordTooltip"></div>
 <script src="texts.js"></script>
