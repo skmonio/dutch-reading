@@ -48,6 +48,7 @@ function switchTab(name, btn) {
     document.getElementById('bankListView').hidden = false;
     renderMemoryBank();
   }
+  if (name === 'statistieken') renderStats();
 }
 
 // ─── App state (which text + tab was open) ───────────────────────────────────
@@ -349,6 +350,105 @@ function showMilestoneToast(text) {
   toast.classList.add('show');
   clearTimeout(milestoneToastTimer);
   milestoneToastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+}
+
+// ─── Stats dashboard ──────────────────────────────────────────────────────────
+// Everything here is derived on the fly from textProgress/memoryBank/bestStreak —
+// no separate stats store to keep in sync.
+const QUESTION_TYPE_ORDER = ['Detail', 'Hoofdgedachte', 'Inferentie', 'Woordbetekenis'];
+
+function computeStats() {
+  let completedCount = 0, scoreSum = 0, questionSum = 0;
+  const tierCounts = { 'score-green': 0, 'score-yellow': 0, 'score-orange': 0, 'score-red': 0 };
+  const typeStats = {};
+
+  TEXTS.forEach((t, i) => {
+    const p = textProgress[i];
+    if (isTextComplete(p)) {
+      completedCount++;
+      const s = scoreForProgress(i);
+      scoreSum += s.score;
+      questionSum += s.total;
+      tierCounts[scoreClass(s.score, s.total)]++;
+    }
+    if (p && Array.isArray(p.originalAnswers)) {
+      t.questions.forEach((q, qi) => {
+        const ans = p.originalAnswers[qi];
+        if (ans == null) return;
+        const st = typeStats[q.type] || (typeStats[q.type] = { correct: 0, total: 0 });
+        st.total++;
+        if (ans === q.correct) st.correct++;
+      });
+    }
+  });
+
+  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const wordsThisWeek = memoryBank.filter(e => e.addedAt && e.addedAt >= oneWeekAgo).length;
+
+  return {
+    completedCount,
+    avgPct: questionSum > 0 ? Math.round((scoreSum / questionSum) * 100) : null,
+    tierCounts,
+    typeStats,
+    wordsThisWeek
+  };
+}
+
+function renderStats() {
+  const container = document.getElementById('statsContent');
+  const s = computeStats();
+
+  const tilesHtml =
+    `<div class="stats-tiles">` +
+    `<div class="stat-tile"><div class="stat-value">${s.completedCount}/${TEXTS.length}</div><div class="stat-label">Teksten voltooid</div></div>` +
+    `<div class="stat-tile"><div class="stat-value">${s.avgPct == null ? '&mdash;' : s.avgPct + '%'}</div><div class="stat-label">Gemiddelde score</div></div>` +
+    `<div class="stat-tile"><div class="stat-value">${bestStreak}</div><div class="stat-label">Beste reeks &#128293;</div></div>` +
+    `<div class="stat-tile"><div class="stat-value">${memoryBank.length}</div><div class="stat-label">Woorden opgeslagen` +
+    (s.wordsThisWeek > 0 ? ` <span class="stat-sub">(+${s.wordsThisWeek} deze week)</span>` : '') +
+    `</div></div>` +
+    `</div>`;
+
+  const typeRows = QUESTION_TYPE_ORDER.map(type => {
+    const st = s.typeStats[type];
+    if (!st || st.total === 0) {
+      return `<div class="stat-bar-row"><div class="stat-bar-label">${escapeHtml(type)}</div><div class="stat-bar-track"></div><div class="stat-bar-value stat-bar-nodata">nog niet geoefend</div></div>`;
+    }
+    const pct = Math.round((st.correct / st.total) * 100);
+    return `<div class="stat-bar-row"><div class="stat-bar-label">${escapeHtml(type)}</div><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${pct}%"></div></div><div class="stat-bar-value">${pct}% <span class="stat-bar-count">(${st.correct}/${st.total})</span></div></div>`;
+  }).join('');
+
+  const tiers = [
+    { cls: 'score-green', label: 'Uitstekend (5/5)' },
+    { cls: 'score-yellow', label: 'Goed (4/5)' },
+    { cls: 'score-orange', label: 'Matig (3/5)' },
+    { cls: 'score-red', label: '2/5 of lager' }
+  ];
+  let distHtml;
+  if (s.completedCount > 0) {
+    const segments = tiers.map(t => {
+      const count = s.tierCounts[t.cls];
+      if (!count) return '';
+      const width = Math.round((count / s.completedCount) * 100);
+      return `<div class="dist-segment ${t.cls}" style="width:${width}%" title="${escapeHtml(t.label)}: ${count}"></div>`;
+    }).join('');
+    const legend = tiers.map(t =>
+      `<div class="dist-legend-item"><span class="dist-dot ${t.cls}"></span>${escapeHtml(t.label)} <strong>${s.tierCounts[t.cls]}</strong></div>`
+    ).join('');
+    distHtml = `<div class="dist-bar">${segments}</div><div class="dist-legend">${legend}</div>`;
+  } else {
+    distHtml = `<div class="bank-empty">Maak een tekst af om je scoreverdeling te zien.</div>`;
+  }
+
+  container.innerHTML =
+    tilesHtml +
+    `<div class="stats-section">` +
+    `<div class="stats-section-title">Nauwkeurigheid per vraagtype</div>` +
+    `<div class="stat-bars">${typeRows}</div>` +
+    `</div>` +
+    `<div class="stats-section">` +
+    `<div class="stats-section-title">Verdeling van scores</div>` +
+    distHtml +
+    `</div>`;
 }
 
 // ─── Tap-to-translate ─────────────────────────────────────────────────────────
