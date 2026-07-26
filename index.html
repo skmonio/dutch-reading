@@ -148,8 +148,8 @@
     <div class="header-left"><h1>Leestraining</h1><span class="badge">Niveau B1 &middot; NT2</span><span class="badge streak-badge" id="streakBadge" title="Opeenvolgende teksten met minstens 4/5 goed" hidden>&#128293; 0</span></div>
   </header>
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('oefening',this)">Oefening</button>
-    <button class="tab-btn" onclick="switchTab('geheugenbank',this)">Geheugenbank <span class="count-badge" id="bankCount">0</span></button>
+    <button class="tab-btn active" id="tabOefeningBtn" onclick="switchTab('oefening',this)">Oefening</button>
+    <button class="tab-btn" id="tabBankBtn" onclick="switchTab('geheugenbank',this)">Geheugenbank <span class="count-badge" id="bankCount">0</span></button>
   </div>
   <div class="tab-panel active" id="tab-oefening">
     <div class="picker-header">
