@@ -140,6 +140,35 @@
   .practice-done{text-align:center;padding:40px 24px;background:var(--surface);border:1px solid var(--border);border-radius:4px;max-width:440px;width:100%}
   .practice-done-title{font-family:'IBM Plex Serif',serif;font-size:1.05rem;font-weight:600;margin-bottom:16px;color:var(--text);line-height:1.4}
   .practice-done-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .stats-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}
+  .stat-tile{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px 18px}
+  .stat-value{font-family:'IBM Plex Serif',serif;font-size:1.7rem;font-weight:600;color:var(--accent);line-height:1;font-variant-numeric:tabular-nums}
+  .stat-label{font-size:.72rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--label);margin-top:6px}
+  .stat-sub{font-size:.68rem;color:var(--muted);text-transform:none;letter-spacing:0;font-weight:500}
+  .stats-section{margin-bottom:26px}
+  .stats-section-title{font-size:.72rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--label);margin-bottom:12px}
+  .stat-bars{display:flex;flex-direction:column;gap:12px}
+  .stat-bar-row{display:grid;grid-template-columns:112px 1fr auto;align-items:center;gap:10px}
+  .stat-bar-label{font-size:.83rem;color:var(--text)}
+  .stat-bar-track{height:8px;border-radius:4px;background:var(--border);overflow:hidden}
+  .stat-bar-fill{height:100%;border-radius:4px;background:var(--accent)}
+  .stat-bar-value{font-size:.78rem;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .stat-bar-count{color:var(--label)}
+  .stat-bar-nodata{font-style:italic;color:var(--label)}
+  .dist-bar{display:flex;gap:2px;height:14px;border-radius:7px;overflow:hidden;background:var(--bg)}
+  .dist-segment{height:100%}
+  .dist-segment.score-green{background:var(--accent)}
+  .dist-segment.score-yellow{background:#c9a227}
+  .dist-segment.score-orange{background:#c9702f}
+  .dist-segment.score-red{background:var(--wrong)}
+  .dist-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px}
+  .dist-legend-item{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--muted)}
+  .dist-legend-item strong{color:var(--text);font-variant-numeric:tabular-nums}
+  .dist-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .dist-dot.score-green{background:var(--accent)}
+  .dist-dot.score-yellow{background:#c9a227}
+  .dist-dot.score-orange{background:#c9702f}
+  .dist-dot.score-red{background:var(--wrong)}
 </style>
 </head>
 <body>
@@ -150,6 +179,7 @@
   <div class="tabs">
     <button class="tab-btn active" id="tabOefeningBtn" onclick="switchTab('oefening',this)">Oefening</button>
     <button class="tab-btn" id="tabBankBtn" onclick="switchTab('geheugenbank',this)">Geheugenbank <span class="count-badge" id="bankCount">0</span></button>
+    <button class="tab-btn" id="tabStatsBtn" onclick="switchTab('statistieken',this)">Statistieken</button>
   </div>
   <div class="tab-panel active" id="tab-oefening">
     <div class="picker-header">
@@ -195,6 +225,7 @@
     <div id="bankListView"><div id="memoryBankList"></div></div>
     <div id="bankPracticeView" hidden></div>
   </div>
+  <div class="tab-panel" id="tab-statistieken"><div id="statsContent"></div></div>
 </div>
 <div class="word-tooltip" id="wordTooltip"></div>
 <div class="milestone-toast" id="milestoneToast"></div>
