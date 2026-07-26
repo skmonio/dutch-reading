@@ -245,6 +245,7 @@ function renderControls() {
 // ─── Finalise ─────────────────────────────────────────────────────────────────
 function finalise() {
   saveCurrentProgress(); // ensure completion is persisted even if a caller skipped it
+  updateStreak();
   displayScoreBar(true);
 }
 
@@ -284,6 +285,54 @@ function restartAll() {
   currentIdx = 0;
   document.getElementById('allDone').classList.remove('show');
   loadText();
+}
+
+// ─── Streaks & milestones ─────────────────────────────────────────────────────
+let streak = 0, bestStreak = 0;
+const STREAK_MILESTONES = [3, 5, 10, 20, 50];
+const WORDBANK_MILESTONES = [10, 25, 50, 100, 200];
+
+function loadStreak() {
+  try {
+    const d = JSON.parse(localStorage.getItem('streakData') || '{}');
+    streak = d.streak || 0;
+    bestStreak = d.bestStreak || 0;
+  } catch (e) { streak = 0; bestStreak = 0; }
+  updateStreakBadge();
+}
+
+function saveStreak() {
+  localStorage.setItem('streakData', JSON.stringify({ streak, bestStreak }));
+}
+
+function updateStreakBadge() {
+  const el = document.getElementById('streakBadge');
+  if (!el) return;
+  el.hidden = streak === 0;
+  el.textContent = `\u{1F525} ${streak}`;
+  el.title = `Opeenvolgende teksten met minstens 4/5 goed — beste reeks: ${bestStreak}`;
+}
+
+// A "good" finish (4/5 or better) extends the streak; anything lower resets it.
+function updateStreak() {
+  const score = answers.filter((a, i) => a === currentQuestions[i].correct).length;
+  const total = currentQuestions.length;
+  const good = total > 0 && score / total >= 0.8;
+  streak = good ? streak + 1 : 0;
+  if (streak > bestStreak) bestStreak = streak;
+  saveStreak();
+  updateStreakBadge();
+  if (good && STREAK_MILESTONES.includes(streak)) showMilestoneToast(`\u{1F525} ${streak} op een rij!`);
+}
+
+let milestoneToastTimer = null;
+function showMilestoneToast(text) {
+  const toast = document.getElementById('milestoneToast');
+  if (!toast) return;
+  toast.textContent = text;
+  toast.classList.add('show');
+  clearTimeout(milestoneToastTimer);
+  milestoneToastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
 }
 
 // ─── Tap-to-translate ─────────────────────────────────────────────────────────
@@ -482,6 +531,9 @@ function saveWord(span) {
       `<span class="wt-word">${escapeHtml(wordDisplay)}</span>` +
       `<span class="wt-saved">&#10003; Opgeslagen in de geheugenbank</span>`;
     refreshTapwordSavedState(); // safe here: tooltip isn't shown yet
+    if (WORDBANK_MILESTONES.includes(memoryBank.length)) {
+      showMilestoneToast(`\u{1F389} ${memoryBank.length} woorden opgeslagen!`);
+    }
   }
   tooltip.classList.add('show');
   positionWordTooltipAtRect(tooltip, rect);
@@ -573,10 +625,14 @@ function renderMemoryBank() {
   const practiceBtn = document.createElement('button'); practiceBtn.className = 'btn-primary';
   practiceBtn.textContent = 'Oefenen';
   practiceBtn.onclick = startPractice;
+  const quizBtn = document.createElement('button'); quizBtn.className = 'btn-primary';
+  quizBtn.textContent = 'Quiz';
+  quizBtn.onclick = startVocabQuiz;
   const clearBtn = document.createElement('button'); clearBtn.className = 'btn-secondary';
   clearBtn.textContent = 'Wis alles';
   clearBtn.onclick = clearMemoryBank;
   toolbar.appendChild(practiceBtn);
+  toolbar.appendChild(quizBtn);
   toolbar.appendChild(clearBtn);
   list.appendChild(toolbar);
 
@@ -711,7 +767,117 @@ function renderPracticeCard() {
     `</div></div>`;
 }
 
+// ─── Memory bank practice: multiple-choice quiz ──────────────────────────────
+// Retrieval practice (recall the meaning, then check) beats passively flipping a
+// card for retention, so this is a second, more active mode alongside Oefenen.
+let quizQueue = [];
+let quizIdx = 0;
+let quizScore = 0;
+let quizAnswered = null; // the option text the user picked, or null before they answer
+
+// Wrong-answer options for one word: prefer other saved words' glosses (so the
+// choices feel relevant to what you're actually studying), padding from the full
+// glossary if the bank is too small to supply three distinct distractors.
+function pickDistractors(correctEntry, count) {
+  const seen = new Set([correctEntry.gloss]);
+  const distractors = [];
+  shuffled(memoryBank.filter(e => e.key !== correctEntry.key)).forEach(e => {
+    if (distractors.length < count && e.gloss && !seen.has(e.gloss)) { distractors.push(e.gloss); seen.add(e.gloss); }
+  });
+  if (distractors.length < count && typeof GLOSSARY !== 'undefined') {
+    shuffled(Object.keys(GLOSSARY)).forEach(k => {
+      if (distractors.length >= count) return;
+      const g = GLOSSARY[k];
+      if (k !== correctEntry.key && g && !seen.has(g)) { distractors.push(g); seen.add(g); }
+    });
+  }
+  return distractors;
+}
+
+function startVocabQuiz() {
+  if (!memoryBank.length) return;
+  quizQueue = shuffled(memoryBank).map(entry => {
+    const options = sentencesForWord(entry);
+    const pick = options[Math.floor(Math.random() * options.length)];
+    const choices = shuffled([entry.gloss, ...pickDistractors(entry, 3)]);
+    return { word: entry.word, key: entry.key, gloss: entry.gloss, sentence: pick.sentence, choices };
+  });
+  quizIdx = 0;
+  quizScore = 0;
+  quizAnswered = null;
+  document.getElementById('bankListView').hidden = true;
+  document.getElementById('bankPracticeView').hidden = false;
+  renderQuizCard();
+}
+
+function selectQuizOption(choiceText) {
+  if (quizAnswered != null) return;
+  quizAnswered = choiceText;
+  if (choiceText === quizQueue[quizIdx].gloss) quizScore++;
+  renderQuizCard();
+}
+
+function quizNext() {
+  quizIdx++;
+  quizAnswered = null;
+  renderQuizCard();
+}
+
+function renderQuizCard() {
+  const container = document.getElementById('bankPracticeView');
+
+  if (quizIdx >= quizQueue.length) {
+    const pct = quizQueue.length ? Math.round((quizScore / quizQueue.length) * 100) : 0;
+    container.innerHTML =
+      `<div class="bank-practice-inner"><div class="practice-done">` +
+      `<div class="practice-done-title">Klaar! Je scoorde ${quizScore}/${quizQueue.length} (${pct}%).</div>` +
+      `<div class="practice-done-actions">` +
+      `<button class="btn-primary quiz-restart-btn">Nog een keer</button>` +
+      `<button class="btn-secondary" onclick="exitPractice()">Terug naar lijst</button>` +
+      `</div></div></div>`;
+    container.querySelector('.quiz-restart-btn').onclick = startVocabQuiz;
+    return;
+  }
+
+  const item = quizQueue[quizIdx];
+  const wordRe = new RegExp(`(${item.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
+  const sentenceHtml = escapeHtml(item.sentence).replace(wordRe, '<mark>$1</mark>');
+  const answered = quizAnswered != null;
+
+  container.innerHTML =
+    `<div class="bank-practice-inner">` +
+    `<div class="practice-progress">${quizIdx + 1} / ${quizQueue.length} &middot; ${quizScore} goed</div>` +
+    `<div class="practice-card">` +
+    `<div class="practice-sentence">${sentenceHtml}</div>` +
+    `<div class="quiz-question">Wat betekent <strong>${escapeHtml(item.word)}</strong>?</div>` +
+    `<div class="options quiz-options"></div>` +
+    `</div>` +
+    `<div class="practice-nav">` +
+    `<button class="btn-secondary" onclick="exitPractice()">Stoppen</button>` +
+    (answered ? `<button class="btn-primary quiz-next-btn">${quizIdx === quizQueue.length - 1 ? 'Klaar' : 'Volgende &rarr;'}</button>` : '') +
+    `</div></div>`;
+
+  const opts = container.querySelector('.quiz-options');
+  item.choices.forEach((choice, oi) => {
+    const div = document.createElement('div'); div.className = 'option';
+    if (answered) {
+      div.classList.add('disabled');
+      if (choice === item.gloss) div.classList.add('correct');
+      else if (choice === quizAnswered) div.classList.add('wrong');
+    }
+    const letter = document.createElement('span'); letter.className = 'option-letter';
+    letter.textContent = String.fromCharCode(65 + oi);
+    const text = document.createElement('span'); text.textContent = choice;
+    div.appendChild(letter); div.appendChild(text);
+    if (!answered) div.addEventListener('click', () => selectQuizOption(choice));
+    opts.appendChild(div);
+  });
+
+  if (answered) container.querySelector('.quiz-next-btn').onclick = quizNext;
+}
+
 // ─── Init ──────────────────────────────────────────────────────────────────────
 loadTextProgress();
 loadMemoryBank();
+loadStreak();
 loadText();
