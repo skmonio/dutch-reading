@@ -2,7 +2,10 @@
 let currentIdx = 0, currentQ = 0;
 let answers = [];          // answers[qi] = chosen option index or null
 let currentQuestions = []; // shuffled copy of questions for this load
-let textScores = {}; // { [textIdx]: {score, total} } — last result per text, persisted to localStorage
+// { [textIdx]: {originalAnswers: [origOptionIdxOrNull, ...], currentQ} } — full per-question
+// progress per text, persisted to localStorage. originalAnswers is keyed by the question's
+// ORIGINAL (unshuffled) option index so it survives a fresh reshuffle on reload.
+let textProgress = {};
 let showEnPassage = false; // English toggle for the current passage
 let showEnQuestion = false; // English toggle for the current question/answer section
 let memoryBank = [];       // saved words for later practice, persisted to localStorage
@@ -23,7 +26,8 @@ function shuffleQuestions(questions) {
     const shuffled = {
       ...q,
       options: indices.map(i => q.options[i]),
-      correct: indices.indexOf(q.correct)
+      correct: indices.indexOf(q.correct),
+      _indices: indices // _indices[shuffledPos] = originalPos — used to resume progress across reshuffles
     };
     if (q.en) shuffled.en = { ...q.en, options: indices.map(i => q.en.options[i]) };
     return shuffled;
@@ -46,30 +50,32 @@ function switchTab(name, btn) {
 // ─── Text navigation ──────────────────────────────────────────────────────────
 function goTo(idx) {
   if (idx < 0 || idx >= TEXTS.length) return;
-  const prev = textScores[idx];
-  if (prev) {
-    const again = confirm(`Je scoorde eerder ${prev.score}/${prev.total} op deze tekst. Opnieuw proberen?`);
-    if (!again) return;
-  }
   currentIdx = idx;
   loadText();
 }
 function goToNext() {
   for (let i = 1; i <= TEXTS.length; i++) {
     const c = (currentIdx + i) % TEXTS.length;
-    if (!(c in textScores)) { goTo(c); return; }
+    if (!isTextComplete(textProgress[c])) { goTo(c); return; }
   }
   goTo((currentIdx + 1) % TEXTS.length);
 }
 
 function loadText() {
   const t = TEXTS[currentIdx];
-  currentQ = 0;
   showEnPassage = false;
   showEnQuestion = false;
   const questionsWithEn = t.en ? t.questions.map((q, i) => ({ ...q, en: t.en.questions[i] })) : t.questions;
   currentQuestions = shuffleQuestions(questionsWithEn);
-  answers = new Array(currentQuestions.length).fill(null);
+
+  const saved = textProgress[currentIdx];
+  if (saved && Array.isArray(saved.originalAnswers) && saved.originalAnswers.length === currentQuestions.length) {
+    answers = saved.originalAnswers.map((origIdx, i) => origIdx == null ? null : currentQuestions[i]._indices.indexOf(origIdx));
+    currentQ = Math.min(saved.currentQ || 0, currentQuestions.length - 1);
+  } else {
+    answers = new Array(currentQuestions.length).fill(null);
+    currentQ = 0;
+  }
 
   document.getElementById('topicTag').textContent    = t.topic;
   const passageEnBtn = document.getElementById('passageEnBtn');
@@ -82,6 +88,8 @@ function loadText() {
   document.getElementById('allDone').classList.remove('show');
 
   updateNav(); renderDots(); renderPips(); renderQuestion();
+
+  if (allAnswered()) displayScoreBar(false); // show the existing result without re-triggering the all-done screen
 }
 
 function updateNav() {
@@ -98,14 +106,33 @@ function scoreClass(score, total) {
   return 'score-red';
 }
 
+// A text is "complete" once every question has a recorded answer.
+function isTextComplete(p) {
+  return !!p && Array.isArray(p.originalAnswers) && p.originalAnswers.every(a => a != null);
+}
+
+function scoreForProgress(idx) {
+  const p = textProgress[idx];
+  if (!isTextComplete(p)) return null;
+  const t = TEXTS[idx];
+  let score = 0;
+  t.questions.forEach((q, i) => { if (p.originalAnswers[i] === q.correct) score++; });
+  return { score, total: t.questions.length };
+}
+
 function renderDots() {
   const c = document.getElementById('topicDots'); c.innerHTML = '';
   TEXTS.forEach((t, i) => {
     const d = document.createElement('button');
     d.className = 'topic-dot'; d.title = t.title;
     if (i === currentIdx) d.classList.add('active');
-    const s = textScores[i];
-    if (s) d.classList.add(scoreClass(s.score, s.total));
+    const p = textProgress[i];
+    if (isTextComplete(p)) {
+      const s = scoreForProgress(i);
+      d.classList.add(scoreClass(s.score, s.total));
+    } else if (p && p.originalAnswers.some(a => a != null)) {
+      d.classList.add('in-progress');
+    }
     d.onclick = () => goTo(i);
     c.appendChild(d);
   });
@@ -119,7 +146,7 @@ function renderPips() {
     pip.className = 'q-pip';
     if (isAnswered(i)) pip.classList.add(isCorrect(i) ? 'done-correct' : 'done-wrong');
     else if (i === currentQ) pip.classList.add('current');
-    pip.onclick = () => { currentQ = i; showEnQuestion = false; renderQuestion(); };
+    pip.onclick = () => { currentQ = i; showEnQuestion = false; saveCurrentProgress(); renderQuestion(); };
     pip.title = `Vraag ${i + 1}`;
     c.appendChild(pip);
   });
@@ -182,6 +209,7 @@ function renderQuestion() {
 function selectOption(oi) {
   if (isAnswered(currentQ)) return;
   answers[currentQ] = oi;
+  saveCurrentProgress();
   renderQuestion();
   if (allAnswered()) finalise();
 }
@@ -193,25 +221,37 @@ function renderControls() {
   if (currentQ > 0) {
     const back = document.createElement('button'); back.className = 'btn-back';
     back.textContent = '← Vorige vraag';
-    back.onclick = () => { currentQ--; showEnQuestion = false; renderQuestion(); };
+    back.onclick = () => { currentQ--; showEnQuestion = false; saveCurrentProgress(); renderQuestion(); };
     c.appendChild(back);
   }
 
   if (isAnswered(currentQ) && currentQ < currentQuestions.length - 1) {
     const next = document.createElement('button'); next.className = 'btn-primary';
     next.textContent = 'Volgende vraag →';
-    next.onclick = () => { currentQ++; showEnQuestion = false; renderQuestion(); };
+    next.onclick = () => { currentQ++; showEnQuestion = false; saveCurrentProgress(); renderQuestion(); };
     c.appendChild(next);
   }
 
   const restart = document.createElement('button'); restart.className = 'btn-secondary';
   restart.textContent = 'Opnieuw beginnen';
-  restart.onclick = () => loadText();
+  restart.onclick = () => {
+    delete textProgress[currentIdx];
+    saveTextProgress();
+    loadText();
+  };
   c.appendChild(restart);
 }
 
 // ─── Finalise ─────────────────────────────────────────────────────────────────
 function finalise() {
+  saveCurrentProgress(); // ensure completion is persisted even if a caller skipped it
+  displayScoreBar(true);
+}
+
+// Shows the score bar for the current (fully-answered) text. Pass triggerAllDone=true
+// only for a just-completed attempt — restoring an already-done text on load must not
+// re-fire the celebratory all-done screen every time you revisit it.
+function displayScoreBar(triggerAllDone) {
   const score = answers.filter((a, i) => a === currentQuestions[i].correct).length;
   const total = currentQuestions.length;
   const pct = Math.round((score / total) * 100);
@@ -220,18 +260,17 @@ function finalise() {
   const bar = document.getElementById('scoreBar'); bar.classList.add('show');
   bar.innerHTML = `<div class="score-number">${score}/${total}</div><div class="score-text">${pct}% goed — ${comment}</div>`;
 
-  textScores[currentIdx] = { score, total };
-  saveTextScores();
-  renderDots();
-
-  const allDone = Object.keys(textScores).length === TEXTS.length;
+  const allDone = TEXTS.every((_, i) => isTextComplete(textProgress[i]));
   if (!allDone) document.getElementById('nextTextBtn').classList.add('show');
-  if (allDone) showAllDone();
+  if (triggerAllDone && allDone) showAllDone();
 }
 
 function showAllDone() {
   let ts = 0, tp = 0;
-  Object.values(textScores).forEach(s => { ts += s.score; tp += s.total; });
+  TEXTS.forEach((_, i) => {
+    const s = scoreForProgress(i);
+    if (s) { ts += s.score; tp += s.total; }
+  });
   const pct = Math.round((ts / tp) * 100);
   const c = pct >= 80 ? 'Geweldig gedaan!' : pct >= 60 ? 'Goed werk! Blijf oefenen.' : 'Goed dat je alle teksten hebt gedaan!';
   document.getElementById('allDoneScore').textContent = `${ts}/${tp}`;
@@ -240,8 +279,8 @@ function showAllDone() {
 }
 
 function restartAll() {
-  textScores = {};
-  saveTextScores();
+  textProgress = {};
+  saveTextProgress();
   currentIdx = 0;
   document.getElementById('allDone').classList.remove('show');
   loadText();
@@ -468,15 +507,27 @@ document.addEventListener('click', (e) => {
   }
 }, true);
 
-// ─── Per-text scores ──────────────────────────────────────────────────────────
-function loadTextScores() {
+// ─── Per-text progress ────────────────────────────────────────────────────────
+function loadTextProgress() {
   try {
-    textScores = JSON.parse(localStorage.getItem('textScores') || '{}');
-  } catch (e) { textScores = {}; }
+    textProgress = JSON.parse(localStorage.getItem('textProgress') || '{}');
+  } catch (e) { textProgress = {}; }
 }
 
-function saveTextScores() {
-  localStorage.setItem('textScores', JSON.stringify(textScores));
+function saveTextProgress() {
+  localStorage.setItem('textProgress', JSON.stringify(textProgress));
+}
+
+// Persists the current answers (converted to original, pre-shuffle option indices so
+// they still make sense after a fresh reshuffle) and which question you're viewing.
+function saveCurrentProgress() {
+  const originalAnswers = currentQuestions.map((q, i) => {
+    const sel = answers[i];
+    return sel == null ? null : q._indices[sel];
+  });
+  textProgress[currentIdx] = { originalAnswers, currentQ };
+  saveTextProgress();
+  renderDots(); // keep the current text's dot live as you answer, not just on navigation
 }
 
 // ─── Memory bank ──────────────────────────────────────────────────────────────
@@ -661,6 +712,6 @@ function renderPracticeCard() {
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
-loadTextScores();
+loadTextProgress();
 loadMemoryBank();
 loadText();
