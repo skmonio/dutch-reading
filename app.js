@@ -10,6 +10,7 @@ let showEnPassage = false; // English toggle for the current passage
 let showEnQuestion = false; // English toggle for the current question/answer section
 let memoryBank = [];       // saved words for later practice, persisted to localStorage
 let lastWordTap = { span: null, time: 0 };
+let activeTabName = 'oefening'; // which tab is open, persisted so the app reopens where you left it
 
 function isAnswered(qi) { return answers[qi] !== null && answers[qi] !== undefined; }
 function isCorrect(qi)  { return isAnswered(qi) && answers[qi] === currentQuestions[qi].correct; }
@@ -40,6 +41,8 @@ function switchTab(name, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
+  activeTabName = name;
+  saveAppState();
   if (name === 'geheugenbank') {
     document.getElementById('bankPracticeView').hidden = true;
     document.getElementById('bankListView').hidden = false;
@@ -47,10 +50,22 @@ function switchTab(name, btn) {
   }
 }
 
+// ─── App state (which text + tab was open) ───────────────────────────────────
+function loadAppState() {
+  try {
+    return JSON.parse(localStorage.getItem('appState') || '{}');
+  } catch (e) { return {}; }
+}
+
+function saveAppState() {
+  localStorage.setItem('appState', JSON.stringify({ currentIdx, activeTab: activeTabName }));
+}
+
 // ─── Text navigation ──────────────────────────────────────────────────────────
 function goTo(idx) {
   if (idx < 0 || idx >= TEXTS.length) return;
   currentIdx = idx;
+  saveAppState();
   loadText();
 }
 function goToNext() {
@@ -283,6 +298,7 @@ function restartAll() {
   textProgress = {};
   saveTextProgress();
   currentIdx = 0;
+  saveAppState();
   document.getElementById('allDone').classList.remove('show');
   loadText();
 }
@@ -877,7 +893,14 @@ function renderQuizCard() {
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
+const savedAppState = loadAppState();
+if (typeof savedAppState.currentIdx === 'number' && savedAppState.currentIdx >= 0 && savedAppState.currentIdx < TEXTS.length) {
+  currentIdx = savedAppState.currentIdx;
+}
 loadTextProgress();
 loadMemoryBank();
 loadStreak();
 loadText();
+if (savedAppState.activeTab === 'geheugenbank') {
+  switchTab('geheugenbank', document.getElementById('tabBankBtn'));
+}
