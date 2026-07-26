@@ -14,6 +14,10 @@
   .header-left{display:flex;align-items:baseline;gap:12px}
   header h1{font-family:'IBM Plex Serif',serif;font-size:1.4rem;font-weight:600;color:var(--accent)}
   .badge{font-size:.7rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--label)}
+  .streak-badge{color:#c9702f}
+  .milestone-toast{display:none;position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--accent);color:#fff;padding:12px 22px;border-radius:24px;font-size:.88rem;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:60;white-space:nowrap}
+  .milestone-toast.show{display:block;animation:toastIn .25s ease}
+  @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
   .tabs{display:flex;margin-bottom:22px;border-bottom:1px solid var(--divider)}
   .tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:8px 16px 10px;font-family:'IBM Plex Sans',sans-serif;font-size:.85rem;font-weight:500;color:var(--muted);cursor:pointer;margin-bottom:-1px;transition:color .15s,border-color .15s}
   .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
@@ -125,6 +129,8 @@
   .bank-practice-inner{display:flex;flex-direction:column;align-items:center;gap:14px}
   .practice-progress{font-size:.72rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--label)}
   .practice-card{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:32px 28px;width:100%;max-width:440px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:20px}
+  .practice-card .quiz-question{font-size:.95rem;font-weight:500;color:var(--text)}
+  .practice-card .quiz-options{width:100%;text-align:left}
   .practice-sentence{font-family:'IBM Plex Serif',serif;font-size:1.05rem;line-height:1.6;color:var(--text)}
   .practice-sentence mark{background:var(--highlight-bg);border-radius:2px;padding:0 1px;font-style:normal}
   .practice-answer{display:flex;flex-direction:column;gap:4px}
@@ -139,7 +145,7 @@
 <body>
 <div class="container">
   <header>
-    <div class="header-left"><h1>Leestraining</h1><span class="badge">Niveau B1 &middot; NT2</span></div>
+    <div class="header-left"><h1>Leestraining</h1><span class="badge">Niveau B1 &middot; NT2</span><span class="badge streak-badge" id="streakBadge" title="Opeenvolgende teksten met minstens 4/5 goed" hidden>&#128293; 0</span></div>
   </header>
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('oefening',this)">Oefening</button>
@@ -191,6 +197,7 @@
   </div>
 </div>
 <div class="word-tooltip" id="wordTooltip"></div>
+<div class="milestone-toast" id="milestoneToast"></div>
 <script src="texts.js"></script>
 <script src="glossary.js"></script>
 <script src="wordindex.js"></script>
