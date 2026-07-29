@@ -11,6 +11,7 @@ let showEnQuestion = false; // English toggle for the current question/answer se
 let memoryBank = [];       // saved words for later practice, persisted to localStorage
 let lastWordTap = { span: null, time: 0 };
 let activeTabName = 'oefening'; // which tab is open, persisted so the app reopens where you left it
+let bankSortMode = 'recent'; // 'recent' or 'alpha', persisted
 
 function isAnswered(qi) { return answers[qi] !== null && answers[qi] !== undefined; }
 function isCorrect(qi)  { return isAnswered(qi) && answers[qi] === currentQuestions[qi].correct; }
@@ -439,6 +440,30 @@ function renderStats() {
     distHtml = `<div class="bank-empty">Maak een tekst af om je scoreverdeling te zien.</div>`;
   }
 
+  const wb = computeWordBankStats();
+  const wordTiers = [
+    { cls: 'word-learnt', label: 'Geleerd', count: wb.learnt },
+    { cls: 'word-studying', label: 'In studie', count: wb.studying },
+    { cls: 'word-untested', label: 'Nog niet getest', count: wb.untested }
+  ];
+  let wordProgressHtml;
+  if (wb.total > 0) {
+    const learntPct = Math.round((wb.learnt / wb.total) * 100);
+    const segments = wordTiers.map(t => {
+      if (!t.count) return '';
+      const width = Math.round((t.count / wb.total) * 100);
+      return `<div class="dist-segment ${t.cls}" style="width:${width}%" title="${escapeHtml(t.label)}: ${t.count}"></div>`;
+    }).join('');
+    const legend = wordTiers.map(t =>
+      `<div class="dist-legend-item"><span class="dist-dot ${t.cls}"></span>${escapeHtml(t.label)} <strong>${t.count}</strong></div>`
+    ).join('');
+    wordProgressHtml =
+      `<div class="wb-summary"><span class="wb-summary-pct">${learntPct}%</span> geleerd van ${wb.total} opgeslagen woord${wb.total === 1 ? '' : 'en'}</div>` +
+      `<div class="dist-bar">${segments}</div><div class="dist-legend">${legend}</div>`;
+  } else {
+    wordProgressHtml = `<div class="bank-empty">Sla woorden op en doe de Quiz om voortgang te zien.</div>`;
+  }
+
   container.innerHTML =
     tilesHtml +
     `<div class="stats-section">` +
@@ -448,7 +473,24 @@ function renderStats() {
     `<div class="stats-section">` +
     `<div class="stats-section-title">Verdeling van scores</div>` +
     distHtml +
+    `</div>` +
+    `<div class="stats-section">` +
+    `<div class="stats-section-title">Voortgang woordenbank</div>` +
+    wordProgressHtml +
     `</div>`;
+}
+
+// A word only counts as "geleerd" once quizzed more than once at ≥80% —
+// mirrors wordLearnStatus() used for the per-card badge, aggregated across the bank.
+function computeWordBankStats() {
+  let untested = 0, studying = 0, learnt = 0;
+  memoryBank.forEach(e => {
+    const status = wordLearnStatus(e);
+    if (status === 'learnt') learnt++;
+    else if (status === 'studying') studying++;
+    else untested++;
+  });
+  return { total: memoryBank.length, untested, studying, learnt };
 }
 
 // ─── Tap-to-translate ─────────────────────────────────────────────────────────
@@ -715,6 +757,25 @@ function updateBankCount() {
   document.getElementById('bankCount').textContent = memoryBank.length;
 }
 
+function loadBankSortMode() {
+  bankSortMode = localStorage.getItem('bankSortMode') === 'alpha' ? 'alpha' : 'recent';
+}
+
+function setBankSortMode(mode) {
+  bankSortMode = mode;
+  localStorage.setItem('bankSortMode', mode);
+  renderMemoryBank();
+}
+
+// memoryBank itself stays in "most recently added first" order (unshift on save);
+// sorting only reorders a display copy so removal/practice handlers can still
+// resolve back to the real array index via indexOf.
+function getSortedBank() {
+  const arr = [...memoryBank];
+  if (bankSortMode === 'alpha') arr.sort((a, b) => a.word.localeCompare(b.word, 'nl', { sensitivity: 'base' }));
+  return arr;
+}
+
 function removeFromMemoryBank(i) {
   memoryBank.splice(i, 1);
   saveMemoryBank();
@@ -738,6 +799,17 @@ function renderMemoryBank() {
   }
 
   const toolbar = document.createElement('div'); toolbar.className = 'bank-toolbar';
+
+  const sortWrap = document.createElement('div'); sortWrap.className = 'bank-sort';
+  [['recent', 'Recent'], ['alpha', 'A-Z']].forEach(([mode, label]) => {
+    const b = document.createElement('button');
+    b.className = 'sort-btn' + (bankSortMode === mode ? ' active' : '');
+    b.textContent = label;
+    b.onclick = () => setBankSortMode(mode);
+    sortWrap.appendChild(b);
+  });
+
+  const actionsWrap = document.createElement('div'); actionsWrap.className = 'bank-actions';
   const practiceBtn = document.createElement('button'); practiceBtn.className = 'btn-primary';
   practiceBtn.textContent = 'Oefenen';
   practiceBtn.onclick = startPractice;
@@ -747,20 +819,24 @@ function renderMemoryBank() {
   const clearBtn = document.createElement('button'); clearBtn.className = 'btn-secondary';
   clearBtn.textContent = 'Wis alles';
   clearBtn.onclick = clearMemoryBank;
-  toolbar.appendChild(practiceBtn);
-  toolbar.appendChild(quizBtn);
-  toolbar.appendChild(clearBtn);
+  actionsWrap.appendChild(practiceBtn);
+  actionsWrap.appendChild(quizBtn);
+  actionsWrap.appendChild(clearBtn);
+
+  toolbar.appendChild(sortWrap);
+  toolbar.appendChild(actionsWrap);
   list.appendChild(toolbar);
 
   const wrap = document.createElement('div'); wrap.className = 'bank-list';
-  memoryBank.forEach((entry, i) => {
+  getSortedBank().forEach((entry) => {
+    const i = memoryBank.indexOf(entry);
     const card = document.createElement('div'); card.className = 'bank-card';
     const wordRe = new RegExp(`(${entry.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
     const sentenceHtml = escapeHtml(entry.sentence).replace(wordRe, '<mark>$1</mark>');
     const otherSentenceCount = sentencesForWord(entry).length - 1;
     card.innerHTML =
       `<button class="bank-remove" title="Verwijderen">&times;</button>` +
-      `<div class="bank-card-header"><span class="bank-word">${escapeHtml(entry.word)}</span></div>` +
+      `<div class="bank-card-header"><span class="bank-word">${escapeHtml(entry.word)}</span>${wordStatusBadge(entry)}</div>` +
       `<div class="bank-gloss">${escapeHtml(entry.gloss || '(geen vertaling)')}</div>` +
       `<div class="bank-sentence">${sentenceHtml}</div>` +
       `<div class="bank-source">${escapeHtml(entry.topic)} &middot; ${escapeHtml(entry.sourceTitle)}</div>` +
@@ -929,8 +1005,40 @@ function startVocabQuiz() {
 function selectQuizOption(choiceText) {
   if (quizAnswered != null) return;
   quizAnswered = choiceText;
-  if (choiceText === quizQueue[quizIdx].gloss) quizScore++;
+  const item = quizQueue[quizIdx];
+  const correct = choiceText === item.gloss;
+  if (correct) quizScore++;
+  recordQuizResult(item.key, correct);
   renderQuizCard();
+}
+
+// Only the multiple-choice Quiz produces a real right/wrong signal per word —
+// flipping a flashcard is a self-report with no answer to check, so it doesn't count.
+function recordQuizResult(key, correct) {
+  const entry = memoryBank.find(e => e.key === key);
+  if (!entry) return;
+  entry.quizStats = entry.quizStats || { attempts: 0, correct: 0 };
+  entry.quizStats.attempts++;
+  if (correct) entry.quizStats.correct++;
+  saveMemoryBank();
+}
+
+// A word counts as "geleerd" only once it's been quizzed more than once and
+// answered right at least 80% of the time — one lucky first guess shouldn't count.
+function wordLearnStatus(entry) {
+  const qs = entry.quizStats;
+  if (!qs || qs.attempts === 0) return 'untested';
+  return qs.attempts >= 2 && qs.correct / qs.attempts >= 0.8 ? 'learnt' : 'studying';
+}
+
+function wordStatusBadge(entry) {
+  const status = wordLearnStatus(entry);
+  if (status === 'untested') return '';
+  const qs = entry.quizStats;
+  const pct = Math.round((qs.correct / qs.attempts) * 100);
+  const cls = status === 'learnt' ? 'bank-status-learnt' : 'bank-status-studying';
+  const label = status === 'learnt' ? 'Geleerd' : 'In studie';
+  return `<span class="bank-status ${cls}">${label} &middot; ${pct}% (${qs.correct}/${qs.attempts})</span>`;
 }
 
 function quizNext() {
@@ -999,6 +1107,7 @@ if (typeof savedAppState.currentIdx === 'number' && savedAppState.currentIdx >= 
 }
 loadTextProgress();
 loadMemoryBank();
+loadBankSortMode();
 loadStreak();
 loadText();
 if (savedAppState.activeTab === 'geheugenbank') {
