@@ -11,7 +11,9 @@ let showEnQuestion = false; // English toggle for the current question/answer se
 let memoryBank = [];       // saved words for later practice, persisted to localStorage
 let lastWordTap = { span: null, time: 0 };
 let activeTabName = 'oefening'; // which tab is open, persisted so the app reopens where you left it
-let bankSortMode = 'recent'; // 'recent' or 'alpha', persisted
+let bankViewMode = 'list'; // 'list' or 'practice' — whether Geheugenbank is mid flashcard/quiz session
+let bankSortField = 'recent'; // 'recent' or 'alpha'
+let bankSortDir = 'desc';     // 'asc' or 'desc' — meaning depends on the field; persisted
 
 function isAnswered(qi) { return answers[qi] !== null && answers[qi] !== undefined; }
 function isCorrect(qi)  { return isAnswered(qi) && answers[qi] === currentQuestions[qi].correct; }
@@ -44,7 +46,9 @@ function switchTab(name, btn) {
   btn.classList.add('active');
   activeTabName = name;
   saveAppState();
-  if (name === 'geheugenbank') {
+  if (name === 'geheugenbank' && bankViewMode !== 'practice') {
+    // Leave an in-progress flashcard/quiz session exactly as it was if we're
+    // returning to one — only render the list view when we're not mid-session.
     document.getElementById('bankPracticeView').hidden = true;
     document.getElementById('bankListView').hidden = false;
     renderMemoryBank();
@@ -758,21 +762,42 @@ function updateBankCount() {
 }
 
 function loadBankSortMode() {
-  bankSortMode = localStorage.getItem('bankSortMode') === 'alpha' ? 'alpha' : 'recent';
+  try {
+    const s = JSON.parse(localStorage.getItem('bankSort') || '{}');
+    bankSortField = s.field === 'alpha' ? 'alpha' : 'recent';
+    bankSortDir = s.dir === 'asc' ? 'asc' : 'desc';
+  } catch (e) { bankSortField = 'recent'; bankSortDir = 'desc'; }
 }
 
-function setBankSortMode(mode) {
-  bankSortMode = mode;
-  localStorage.setItem('bankSortMode', mode);
+function saveBankSortMode() {
+  localStorage.setItem('bankSort', JSON.stringify({ field: bankSortField, dir: bankSortDir }));
+}
+
+// Tapping the already-active sort button flips its direction; tapping the other
+// field switches to it with that field's natural default direction.
+function setBankSort(field) {
+  if (bankSortField === field) {
+    bankSortDir = bankSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    bankSortField = field;
+    bankSortDir = field === 'alpha' ? 'asc' : 'desc';
+  }
+  saveBankSortMode();
   renderMemoryBank();
 }
 
-// memoryBank itself stays in "most recently added first" order (unshift on save);
-// sorting only reorders a display copy so removal/practice handlers can still
-// resolve back to the real array index via indexOf.
+// memoryBank itself stays in "most recently added first" order (unshift on save) —
+// that's already bankSortField 'recent' + dir 'desc', so only reverse for 'asc'.
+// Sorting only reorders a display copy; removal/practice handlers resolve back to
+// the real array index via indexOf.
 function getSortedBank() {
   const arr = [...memoryBank];
-  if (bankSortMode === 'alpha') arr.sort((a, b) => a.word.localeCompare(b.word, 'nl', { sensitivity: 'base' }));
+  if (bankSortField === 'alpha') {
+    arr.sort((a, b) => a.word.localeCompare(b.word, 'nl', { sensitivity: 'base' }));
+    if (bankSortDir === 'desc') arr.reverse();
+  } else if (bankSortDir === 'asc') {
+    arr.reverse();
+  }
   return arr;
 }
 
@@ -801,13 +826,18 @@ function renderMemoryBank() {
   const toolbar = document.createElement('div'); toolbar.className = 'bank-toolbar';
 
   const sortWrap = document.createElement('div'); sortWrap.className = 'bank-sort';
-  [['recent', 'Recent'], ['alpha', 'A-Z']].forEach(([mode, label]) => {
-    const b = document.createElement('button');
-    b.className = 'sort-btn' + (bankSortMode === mode ? ' active' : '');
-    b.textContent = label;
-    b.onclick = () => setBankSortMode(mode);
-    sortWrap.appendChild(b);
-  });
+  const recentBtn = document.createElement('button');
+  recentBtn.className = 'sort-btn' + (bankSortField === 'recent' ? ' active' : '');
+  recentBtn.textContent = bankSortField === 'recent' ? (bankSortDir === 'desc' ? 'Recent ▾' : 'Recent ▴') : 'Recent';
+  recentBtn.title = 'Recent: nieuwste eerst / oudste eerst';
+  recentBtn.onclick = () => setBankSort('recent');
+  const alphaBtn = document.createElement('button');
+  alphaBtn.className = 'sort-btn' + (bankSortField === 'alpha' ? ' active' : '');
+  alphaBtn.textContent = bankSortField === 'alpha' && bankSortDir === 'desc' ? 'Z-A' : 'A-Z';
+  alphaBtn.title = 'Alfabetisch: A-Z / Z-A';
+  alphaBtn.onclick = () => setBankSort('alpha');
+  sortWrap.appendChild(recentBtn);
+  sortWrap.appendChild(alphaBtn);
 
   const actionsWrap = document.createElement('div'); actionsWrap.className = 'bank-actions';
   const practiceBtn = document.createElement('button'); practiceBtn.className = 'btn-primary';
@@ -879,6 +909,7 @@ function startPractice() {
   practiceLabel = 'list';
   practiceIdx = 0;
   practiceFlipped = false;
+  bankViewMode = 'practice';
   document.getElementById('bankListView').hidden = true;
   document.getElementById('bankPracticeView').hidden = false;
   renderPracticeCard();
@@ -895,12 +926,14 @@ function startPracticeWord(key) {
   practiceLabel = entry.word;
   practiceIdx = 0;
   practiceFlipped = false;
+  bankViewMode = 'practice';
   document.getElementById('bankListView').hidden = true;
   document.getElementById('bankPracticeView').hidden = false;
   renderPracticeCard();
 }
 
 function exitPractice() {
+  bankViewMode = 'list';
   document.getElementById('bankPracticeView').hidden = true;
   document.getElementById('bankListView').hidden = false;
   renderMemoryBank();
@@ -997,6 +1030,7 @@ function startVocabQuiz() {
   quizIdx = 0;
   quizScore = 0;
   quizAnswered = null;
+  bankViewMode = 'practice';
   document.getElementById('bankListView').hidden = true;
   document.getElementById('bankPracticeView').hidden = false;
   renderQuizCard();
@@ -1035,10 +1069,14 @@ function wordStatusBadge(entry) {
   const status = wordLearnStatus(entry);
   if (status === 'untested') return '';
   const qs = entry.quizStats;
+  const wrong = qs.attempts - qs.correct;
   const pct = Math.round((qs.correct / qs.attempts) * 100);
   const cls = status === 'learnt' ? 'bank-status-learnt' : 'bank-status-studying';
   const label = status === 'learnt' ? 'Geleerd' : 'In studie';
-  return `<span class="bank-status ${cls}">${label} &middot; ${pct}% (${qs.correct}/${qs.attempts})</span>`;
+  return `<div class="bank-status-wrap">` +
+    `<span class="bank-status ${cls}">${label}</span>` +
+    `<span class="bank-status-detail">${pct}% &middot; ${qs.correct}&#10003; ${wrong}&#10007; &middot; ${qs.attempts}x</span>` +
+    `</div>`;
 }
 
 function quizNext() {
