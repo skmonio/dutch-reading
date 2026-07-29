@@ -12,6 +12,7 @@ let memoryBank = [];       // saved words for later practice, persisted to local
 let lastWordTap = { span: null, time: 0 };
 let activeTabName = 'oefening'; // which tab is open, persisted so the app reopens where you left it
 let bankViewMode = 'list'; // 'list' or 'practice' — whether Geheugenbank is mid flashcard/quiz session
+let bankSessionKind = null; // 'flashcard' | 'quiz' | null — which practice view is active, when bankViewMode is 'practice'
 let bankSortField = 'recent'; // 'recent' | 'alpha-nl' | 'alpha-en'
 let bankSortDir = 'desc';     // 'asc' or 'desc' — meaning depends on the field; persisted
 let bankFilterStatus = 'all'; // 'all' | 'learnt' | 'studying' | 'untested'; persisted
@@ -549,9 +550,10 @@ function sentencesForWord(entry) {
 // carries its own containing sentence (for the memory-bank save). When
 // markStart/markEnd are given, that character range is additionally wrapped
 // in <mark> — used to keep answer-highlighting compatible with tap-to-translate.
-function renderTappableText(text, markStart, markEnd) {
+function renderTappableText(text, markStart, markEnd, source) {
   const spans = sentenceSpans(text);
   const pieces = [];
+  const sourceAttrs = source ? ` data-title="${escapeHtml(source.title)}" data-topic="${escapeHtml(source.topic)}"` : '';
   let last = 0;
   WORD_RE.lastIndex = 0;
   let m;
@@ -563,7 +565,7 @@ function renderTappableText(text, markStart, markEnd) {
     const savedCls = isWordSaved(lw) ? ' saved' : '';
     pieces.push({
       start: m.index, end: m.index + word.length,
-      html: `<span class="tapword${savedCls}" data-w="${escapeHtml(lw)}" data-s="${escapeHtml(sent)}">${escapeHtml(word)}</span>`
+      html: `<span class="tapword${savedCls}" data-w="${escapeHtml(lw)}" data-s="${escapeHtml(sent)}"${sourceAttrs}>${escapeHtml(word)}</span>`
     });
     last = m.index + word.length;
   }
@@ -644,10 +646,14 @@ function positionWordTooltip(tooltip, span) {
   positionWordTooltipAtRect(tooltip, span.getBoundingClientRect());
 }
 
-// Re-renders the exercise view so tapword "saved" highlighting reflects the
-// current memory bank (e.g. after a removal, the word's page highlight clears).
+// Re-renders whichever view(s) currently show tapwords, so "saved" highlighting
+// reflects the current memory bank (e.g. after a removal, the highlight clears).
 function refreshTapwordSavedState() {
   renderQuestion();
+  if (bankViewMode === 'practice') {
+    if (bankSessionKind === 'quiz') renderQuizCard();
+    else if (bankSessionKind === 'flashcard') renderPracticeCard();
+  }
 }
 
 function showWordTooltip(span) {
@@ -675,7 +681,8 @@ function saveWord(span) {
   const key = span.dataset.w;
   const sentence = span.dataset.s;
   const wordDisplay = span.textContent;
-  const t = TEXTS[currentIdx];
+  const title = span.dataset.title || TEXTS[currentIdx].title;
+  const topic = span.dataset.topic || TEXTS[currentIdx].topic;
   const tooltip = document.getElementById('wordTooltip');
   const existingIdx = memoryBank.findIndex(e => e.key === key);
 
@@ -689,7 +696,7 @@ function saveWord(span) {
   } else {
     memoryBank.unshift({
       word: wordDisplay, key, gloss: glossFor(key), sentence,
-      sourceTitle: t.title, topic: t.topic, addedAt: Date.now()
+      sourceTitle: title, topic, addedAt: Date.now()
     });
     saveMemoryBank();
     tooltip.innerHTML =
@@ -926,7 +933,6 @@ function renderMemoryBank() {
       `<div class="bank-card-header"><span class="bank-word">${escapeHtml(entry.word)}</span>${wordStatusBadge(entry)}</div>` +
       `<div class="bank-gloss">${escapeHtml(entry.gloss || '(geen vertaling)')}</div>` +
       `<div class="bank-sentence">${sentenceHtml}</div>` +
-      `<div class="bank-source">${escapeHtml(entry.topic)}</div>` +
       (otherSentenceCount > 0
         ? `<button class="bank-word-practice">Oefen dit woord (${otherSentenceCount + 1} zinnen) &rarr;</button>`
         : '');
@@ -947,6 +953,24 @@ let practiceLabel = ''; // shown on the completion screen
 
 function sentenceTranslation(sentence) {
   return (typeof SENTENCE_INDEX !== 'undefined' && SENTENCE_INDEX[sentence]) || null;
+}
+
+// Plain, non-interactive rendering with just the target word marked — used
+// before a card is answered/flipped, so tapping can't leak the meaning early.
+function markedSentenceHtml(sentence, word) {
+  const wordRe = new RegExp(`(${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
+  return escapeHtml(sentence).replace(wordRe, '<mark>$1</mark>');
+}
+
+// Fully tappable rendering (translate + double-tap save/remove) with the target
+// word still marked — used once a card is answered/flipped, so users can look
+// up any other unfamiliar word in the sentence too.
+function tapSentenceHtml(sentence, word, source) {
+  const wordRe = new RegExp(`(${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
+  const m = wordRe.exec(sentence);
+  const markStart = m ? m.index : null;
+  const markEnd = m ? m.index + m[0].length : null;
+  return renderTappableText(sentence, markStart, markEnd, source);
 }
 
 function shuffled(arr) {
@@ -974,6 +998,7 @@ function startPractice() {
   practiceFlipped = false;
   practiceShowEn = false;
   bankViewMode = 'practice';
+  bankSessionKind = 'flashcard';
   document.getElementById('bankListView').hidden = true;
   document.getElementById('bankPracticeView').hidden = false;
   renderPracticeCard();
@@ -992,6 +1017,7 @@ function startPracticeWord(key) {
   practiceFlipped = false;
   practiceShowEn = false;
   bankViewMode = 'practice';
+  bankSessionKind = 'flashcard';
   document.getElementById('bankListView').hidden = true;
   document.getElementById('bankPracticeView').hidden = false;
   renderPracticeCard();
@@ -999,6 +1025,7 @@ function startPracticeWord(key) {
 
 function exitPractice() {
   bankViewMode = 'list';
+  bankSessionKind = null;
   document.getElementById('bankPracticeView').hidden = true;
   document.getElementById('bankListView').hidden = false;
   renderMemoryBank();
@@ -1046,10 +1073,12 @@ function renderPracticeCard() {
 
   const entry = practiceQueue[practiceIdx];
   const enSentence = sentenceTranslation(entry.sentence);
-  const wordRe = new RegExp(`(${entry.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
+  const source = { title: entry.sourceTitle, topic: entry.topic };
   const sentenceHtml = (practiceShowEn && enSentence)
     ? escapeHtml(enSentence)
-    : escapeHtml(entry.sentence).replace(wordRe, '<mark>$1</mark>');
+    : practiceFlipped
+      ? tapSentenceHtml(entry.sentence, entry.word, source)
+      : markedSentenceHtml(entry.sentence, entry.word);
   const enToggleHtml = (practiceFlipped && enSentence)
     ? `<button class="sentence-en-toggle" onclick="togglePracticeEn()">${practiceShowEn ? 'NL' : 'EN'}</button>`
     : '';
@@ -1103,13 +1132,14 @@ function startVocabQuiz() {
     const options = sentencesForWord(entry);
     const pick = options[Math.floor(Math.random() * options.length)];
     const choices = shuffled([entry.gloss, ...pickDistractors(entry, 3)]);
-    return { word: entry.word, key: entry.key, gloss: entry.gloss, sentence: pick.sentence, choices };
+    return { word: entry.word, key: entry.key, gloss: entry.gloss, sentence: pick.sentence, sourceTitle: pick.sourceTitle, topic: pick.topic, choices };
   });
   quizIdx = 0;
   quizScore = 0;
   quizAnswered = null;
   quizShowEn = false;
   bankViewMode = 'practice';
+  bankSessionKind = 'quiz';
   document.getElementById('bankListView').hidden = true;
   document.getElementById('bankPracticeView').hidden = false;
   renderQuizCard();
@@ -1137,25 +1167,20 @@ function recordQuizResult(key, correct) {
 }
 
 // A word counts as "geleerd" only once it's been quizzed more than once and
-// answered right at least 80% of the time — one lucky first guess shouldn't count.
+// answered right at least 75% of the time — one lucky first guess shouldn't count.
 function wordLearnStatus(entry) {
   const qs = entry.quizStats;
   if (!qs || qs.attempts === 0) return 'untested';
-  return qs.attempts >= 2 && qs.correct / qs.attempts >= 0.8 ? 'learnt' : 'studying';
+  return qs.attempts >= 2 && qs.correct / qs.attempts >= 0.75 ? 'learnt' : 'studying';
 }
 
 function wordStatusBadge(entry) {
   const status = wordLearnStatus(entry);
   if (status === 'untested') return '';
   const qs = entry.quizStats;
-  const wrong = qs.attempts - qs.correct;
   const pct = Math.round((qs.correct / qs.attempts) * 100);
   const cls = status === 'learnt' ? 'bank-status-learnt' : 'bank-status-studying';
-  const label = status === 'learnt' ? 'Geleerd' : 'In studie';
-  return `<div class="bank-status-wrap">` +
-    `<span class="bank-status ${cls}">${label}</span>` +
-    `<span class="bank-status-detail">${pct}% &middot; ${qs.correct}&#10003; ${wrong}&#10007; &middot; ${qs.attempts}x</span>` +
-    `</div>`;
+  return `<span class="bank-status ${cls}">${pct}%</span>`;
 }
 
 function quizNext() {
@@ -1188,11 +1213,13 @@ function renderQuizCard() {
 
   const item = quizQueue[quizIdx];
   const enSentence = sentenceTranslation(item.sentence);
-  const wordRe = new RegExp(`(${item.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
+  const source = { title: item.sourceTitle, topic: item.topic };
   const answered = quizAnswered != null;
   const sentenceHtml = (quizShowEn && enSentence)
     ? escapeHtml(enSentence)
-    : escapeHtml(item.sentence).replace(wordRe, '<mark>$1</mark>');
+    : answered
+      ? tapSentenceHtml(item.sentence, item.word, source)
+      : markedSentenceHtml(item.sentence, item.word);
   const enToggleHtml = (answered && enSentence)
     ? `<button class="sentence-en-toggle" onclick="toggleQuizEn()">${quizShowEn ? 'NL' : 'EN'}</button>`
     : '';
