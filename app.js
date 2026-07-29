@@ -254,14 +254,16 @@ function renderControls() {
     c.appendChild(next);
   }
 
-  const restart = document.createElement('button'); restart.className = 'btn-secondary';
-  restart.textContent = 'Opnieuw beginnen';
-  restart.onclick = () => {
-    delete textProgress[currentIdx];
-    saveTextProgress();
-    loadText();
-  };
-  c.appendChild(restart);
+  if (allAnswered()) {
+    const restart = document.createElement('button'); restart.className = 'btn-secondary';
+    restart.textContent = 'Opnieuw beginnen';
+    restart.onclick = () => {
+      delete textProgress[currentIdx];
+      saveTextProgress();
+      loadText();
+    };
+    c.appendChild(restart);
+  }
 }
 
 // ─── Finalise ─────────────────────────────────────────────────────────────────
@@ -924,7 +926,7 @@ function renderMemoryBank() {
       `<div class="bank-card-header"><span class="bank-word">${escapeHtml(entry.word)}</span>${wordStatusBadge(entry)}</div>` +
       `<div class="bank-gloss">${escapeHtml(entry.gloss || '(geen vertaling)')}</div>` +
       `<div class="bank-sentence">${sentenceHtml}</div>` +
-      `<div class="bank-source">${escapeHtml(entry.topic)} &middot; ${escapeHtml(entry.sourceTitle)}</div>` +
+      `<div class="bank-source">${escapeHtml(entry.topic)}</div>` +
       (otherSentenceCount > 0
         ? `<button class="bank-word-practice">Oefen dit woord (${otherSentenceCount + 1} zinnen) &rarr;</button>`
         : '');
@@ -940,7 +942,12 @@ function renderMemoryBank() {
 let practiceQueue = [];
 let practiceIdx = 0;
 let practiceFlipped = false;
+let practiceShowEn = false;
 let practiceLabel = ''; // shown on the completion screen
+
+function sentenceTranslation(sentence) {
+  return (typeof SENTENCE_INDEX !== 'undefined' && SENTENCE_INDEX[sentence]) || null;
+}
 
 function shuffled(arr) {
   const out = [...arr];
@@ -955,8 +962,9 @@ function shuffled(arr) {
 // different contexts across sessions instead of always the sentence they were
 // originally saved from.
 function startPractice() {
-  if (!memoryBank.length) return;
-  practiceQueue = shuffled(memoryBank).map(entry => {
+  const words = getVisibleBank();
+  if (!words.length) return;
+  practiceQueue = shuffled(words).map(entry => {
     const options = sentencesForWord(entry);
     const pick = options[Math.floor(Math.random() * options.length)];
     return { word: entry.word, key: entry.key, gloss: entry.gloss, ...pick };
@@ -964,6 +972,7 @@ function startPractice() {
   practiceLabel = 'list';
   practiceIdx = 0;
   practiceFlipped = false;
+  practiceShowEn = false;
   bankViewMode = 'practice';
   document.getElementById('bankListView').hidden = true;
   document.getElementById('bankPracticeView').hidden = false;
@@ -981,6 +990,7 @@ function startPracticeWord(key) {
   practiceLabel = entry.word;
   practiceIdx = 0;
   practiceFlipped = false;
+  practiceShowEn = false;
   bankViewMode = 'practice';
   document.getElementById('bankListView').hidden = true;
   document.getElementById('bankPracticeView').hidden = false;
@@ -1000,11 +1010,16 @@ function flipPracticeCard() {
 }
 
 function practicePrev() {
-  if (practiceIdx > 0) { practiceIdx--; practiceFlipped = false; renderPracticeCard(); }
+  if (practiceIdx > 0) { practiceIdx--; practiceFlipped = false; practiceShowEn = false; renderPracticeCard(); }
 }
 
 function practiceNext() {
-  if (practiceIdx < practiceQueue.length) { practiceIdx++; practiceFlipped = false; renderPracticeCard(); }
+  if (practiceIdx < practiceQueue.length) { practiceIdx++; practiceFlipped = false; practiceShowEn = false; renderPracticeCard(); }
+}
+
+function togglePracticeEn() {
+  practiceShowEn = !practiceShowEn;
+  renderPracticeCard();
 }
 
 function renderPracticeCard() {
@@ -1030,8 +1045,14 @@ function renderPracticeCard() {
   }
 
   const entry = practiceQueue[practiceIdx];
+  const enSentence = sentenceTranslation(entry.sentence);
   const wordRe = new RegExp(`(${entry.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
-  const sentenceHtml = escapeHtml(entry.sentence).replace(wordRe, '<mark>$1</mark>');
+  const sentenceHtml = (practiceShowEn && enSentence)
+    ? escapeHtml(enSentence)
+    : escapeHtml(entry.sentence).replace(wordRe, '<mark>$1</mark>');
+  const enToggleHtml = (practiceFlipped && enSentence)
+    ? `<button class="sentence-en-toggle" onclick="togglePracticeEn()">${practiceShowEn ? 'NL' : 'EN'}</button>`
+    : '';
   const backHtml = practiceFlipped
     ? `<div class="practice-answer"><span class="practice-word">${escapeHtml(entry.word)}</span><span class="practice-gloss">${escapeHtml(entry.gloss || '(geen vertaling)')}</span></div>`
     : `<button class="btn-primary" onclick="flipPracticeCard()">Toon vertaling</button>`;
@@ -1039,7 +1060,7 @@ function renderPracticeCard() {
   container.innerHTML =
     `<div class="bank-practice-inner">` +
     `<div class="practice-progress">${practiceIdx + 1} / ${practiceQueue.length}</div>` +
-    `<div class="practice-card"><div class="practice-sentence">${sentenceHtml}</div>${backHtml}</div>` +
+    `<div class="practice-card"><div class="practice-sentence">${sentenceHtml}${enToggleHtml}</div>${backHtml}</div>` +
     `<div class="practice-nav">` +
     `<button class="btn-back" ${practiceIdx === 0 ? 'disabled' : ''} onclick="practicePrev()">&larr; Vorige</button>` +
     `<button class="btn-secondary" onclick="exitPractice()">Stoppen</button>` +
@@ -1054,6 +1075,7 @@ let quizQueue = [];
 let quizIdx = 0;
 let quizScore = 0;
 let quizAnswered = null; // the option text the user picked, or null before they answer
+let quizShowEn = false;
 
 // Wrong-answer options for one word: prefer other saved words' glosses (so the
 // choices feel relevant to what you're actually studying), padding from the full
@@ -1075,8 +1097,9 @@ function pickDistractors(correctEntry, count) {
 }
 
 function startVocabQuiz() {
-  if (!memoryBank.length) return;
-  quizQueue = shuffled(memoryBank).map(entry => {
+  const words = getVisibleBank();
+  if (!words.length) return;
+  quizQueue = shuffled(words).map(entry => {
     const options = sentencesForWord(entry);
     const pick = options[Math.floor(Math.random() * options.length)];
     const choices = shuffled([entry.gloss, ...pickDistractors(entry, 3)]);
@@ -1085,6 +1108,7 @@ function startVocabQuiz() {
   quizIdx = 0;
   quizScore = 0;
   quizAnswered = null;
+  quizShowEn = false;
   bankViewMode = 'practice';
   document.getElementById('bankListView').hidden = true;
   document.getElementById('bankPracticeView').hidden = false;
@@ -1137,6 +1161,12 @@ function wordStatusBadge(entry) {
 function quizNext() {
   quizIdx++;
   quizAnswered = null;
+  quizShowEn = false;
+  renderQuizCard();
+}
+
+function toggleQuizEn() {
+  quizShowEn = !quizShowEn;
   renderQuizCard();
 }
 
@@ -1157,15 +1187,21 @@ function renderQuizCard() {
   }
 
   const item = quizQueue[quizIdx];
+  const enSentence = sentenceTranslation(item.sentence);
   const wordRe = new RegExp(`(${item.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
-  const sentenceHtml = escapeHtml(item.sentence).replace(wordRe, '<mark>$1</mark>');
   const answered = quizAnswered != null;
+  const sentenceHtml = (quizShowEn && enSentence)
+    ? escapeHtml(enSentence)
+    : escapeHtml(item.sentence).replace(wordRe, '<mark>$1</mark>');
+  const enToggleHtml = (answered && enSentence)
+    ? `<button class="sentence-en-toggle" onclick="toggleQuizEn()">${quizShowEn ? 'NL' : 'EN'}</button>`
+    : '';
 
   container.innerHTML =
     `<div class="bank-practice-inner">` +
     `<div class="practice-progress">${quizIdx + 1} / ${quizQueue.length} &middot; ${quizScore} goed</div>` +
     `<div class="practice-card">` +
-    `<div class="practice-sentence">${sentenceHtml}</div>` +
+    `<div class="practice-sentence">${sentenceHtml}${enToggleHtml}</div>` +
     `<div class="quiz-question">Wat betekent <strong>${escapeHtml(item.word)}</strong>?</div>` +
     `<div class="options quiz-options"></div>` +
     `</div>` +
