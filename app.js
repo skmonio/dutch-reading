@@ -16,6 +16,7 @@ let bankSessionKind = null; // 'flashcard' | 'quiz' | null — which practice vi
 let bankSortField = 'recent'; // 'recent' | 'alpha-nl' | 'alpha-en'
 let bankSortDir = 'desc';     // 'asc' or 'desc' — meaning depends on the field; persisted
 let bankFilterStatus = 'all'; // 'all' | 'learnt' | 'studying' | 'untested'; persisted
+let bankFilterTopic = 'all';  // 'all' or an exact topic string; persisted
 
 function isAnswered(qi) { return answers[qi] !== null && answers[qi] !== undefined; }
 function isCorrect(qi)  { return isAnswered(qi) && answers[qi] === currentQuestions[qi].correct; }
@@ -796,6 +797,23 @@ function setBankFilter(status) {
   renderMemoryBank();
 }
 
+function loadBankFilterTopic() {
+  bankFilterTopic = localStorage.getItem('bankFilterTopic') || 'all';
+}
+
+function setBankFilterTopic(topic) {
+  bankFilterTopic = topic;
+  localStorage.setItem('bankFilterTopic', topic);
+  renderMemoryBank();
+}
+
+// Distinct topics currently represented in the bank, alphabetical — used to
+// populate the topic filter dropdown (the topic itself isn't shown on cards).
+function bankTopics() {
+  const set = new Set(memoryBank.map(e => e.topic).filter(Boolean));
+  return [...set].sort((a, b) => a.localeCompare(b, 'nl', { sensitivity: 'base' }));
+}
+
 // Tapping the already-active sort button flips its direction; tapping a different
 // field switches to it with that field's natural default direction.
 function setBankSort(field) {
@@ -833,11 +851,12 @@ function bankStatusCounts() {
   return counts;
 }
 
-// Sorted, then narrowed to the active status filter (if any).
+// Sorted, then narrowed to the active status and topic filters (if any).
 function getVisibleBank() {
-  const sorted = getSortedBank();
-  if (bankFilterStatus === 'all') return sorted;
-  return sorted.filter(e => wordLearnStatus(e) === bankFilterStatus);
+  let arr = getSortedBank();
+  if (bankFilterStatus !== 'all') arr = arr.filter(e => wordLearnStatus(e) === bankFilterStatus);
+  if (bankFilterTopic !== 'all') arr = arr.filter(e => e.topic === bankFilterTopic);
+  return arr;
 }
 
 function removeFromMemoryBank(i) {
@@ -911,6 +930,20 @@ function renderMemoryBank() {
     chip.onclick = () => setBankFilter(status);
     filterRow.appendChild(chip);
   });
+
+  const topics = bankTopics();
+  if (bankFilterTopic !== 'all' && !topics.includes(bankFilterTopic)) {
+    bankFilterTopic = 'all';
+    localStorage.setItem('bankFilterTopic', 'all');
+  }
+  const topicSelect = document.createElement('select'); topicSelect.className = 'bank-topic-select';
+  topicSelect.innerHTML =
+    `<option value="all">Alle onderwerpen</option>` +
+    topics.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  topicSelect.value = bankFilterTopic;
+  topicSelect.onchange = () => setBankFilterTopic(topicSelect.value);
+  filterRow.appendChild(topicSelect);
+
   list.appendChild(filterRow);
 
   const visible = getVisibleBank();
@@ -1265,6 +1298,7 @@ loadTextProgress();
 loadMemoryBank();
 loadBankSortMode();
 loadBankFilterStatus();
+loadBankFilterTopic();
 loadStreak();
 loadText();
 if (savedAppState.activeTab === 'geheugenbank') {
