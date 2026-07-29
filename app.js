@@ -12,8 +12,9 @@ let memoryBank = [];       // saved words for later practice, persisted to local
 let lastWordTap = { span: null, time: 0 };
 let activeTabName = 'oefening'; // which tab is open, persisted so the app reopens where you left it
 let bankViewMode = 'list'; // 'list' or 'practice' — whether Geheugenbank is mid flashcard/quiz session
-let bankSortField = 'recent'; // 'recent' or 'alpha'
+let bankSortField = 'recent'; // 'recent' | 'alpha-nl' | 'alpha-en'
 let bankSortDir = 'desc';     // 'asc' or 'desc' — meaning depends on the field; persisted
+let bankFilterStatus = 'all'; // 'all' | 'learnt' | 'studying' | 'untested'; persisted
 
 function isAnswered(qi) { return answers[qi] !== null && answers[qi] !== undefined; }
 function isCorrect(qi)  { return isAnswered(qi) && answers[qi] === currentQuestions[qi].correct; }
@@ -761,10 +762,12 @@ function updateBankCount() {
   document.getElementById('bankCount').textContent = memoryBank.length;
 }
 
+const ALPHA_SORT_FIELDS = ['alpha-nl', 'alpha-en'];
+
 function loadBankSortMode() {
   try {
     const s = JSON.parse(localStorage.getItem('bankSort') || '{}');
-    bankSortField = s.field === 'alpha' ? 'alpha' : 'recent';
+    bankSortField = ALPHA_SORT_FIELDS.includes(s.field) ? s.field : 'recent';
     bankSortDir = s.dir === 'asc' ? 'asc' : 'desc';
   } catch (e) { bankSortField = 'recent'; bankSortDir = 'desc'; }
 }
@@ -773,14 +776,25 @@ function saveBankSortMode() {
   localStorage.setItem('bankSort', JSON.stringify({ field: bankSortField, dir: bankSortDir }));
 }
 
-// Tapping the already-active sort button flips its direction; tapping the other
+function loadBankFilterStatus() {
+  const s = localStorage.getItem('bankFilterStatus');
+  bankFilterStatus = ['learnt', 'studying', 'untested'].includes(s) ? s : 'all';
+}
+
+function setBankFilter(status) {
+  bankFilterStatus = status;
+  localStorage.setItem('bankFilterStatus', status);
+  renderMemoryBank();
+}
+
+// Tapping the already-active sort button flips its direction; tapping a different
 // field switches to it with that field's natural default direction.
 function setBankSort(field) {
   if (bankSortField === field) {
     bankSortDir = bankSortDir === 'asc' ? 'desc' : 'asc';
   } else {
     bankSortField = field;
-    bankSortDir = field === 'alpha' ? 'asc' : 'desc';
+    bankSortDir = ALPHA_SORT_FIELDS.includes(field) ? 'asc' : 'desc';
   }
   saveBankSortMode();
   renderMemoryBank();
@@ -792,13 +806,29 @@ function setBankSort(field) {
 // the real array index via indexOf.
 function getSortedBank() {
   const arr = [...memoryBank];
-  if (bankSortField === 'alpha') {
+  if (bankSortField === 'alpha-nl') {
     arr.sort((a, b) => a.word.localeCompare(b.word, 'nl', { sensitivity: 'base' }));
+    if (bankSortDir === 'desc') arr.reverse();
+  } else if (bankSortField === 'alpha-en') {
+    arr.sort((a, b) => (a.gloss || '').localeCompare(b.gloss || '', 'en', { sensitivity: 'base' }));
     if (bankSortDir === 'desc') arr.reverse();
   } else if (bankSortDir === 'asc') {
     arr.reverse();
   }
   return arr;
+}
+
+function bankStatusCounts() {
+  const counts = { all: memoryBank.length, learnt: 0, studying: 0, untested: 0 };
+  memoryBank.forEach(e => { counts[wordLearnStatus(e)]++; });
+  return counts;
+}
+
+// Sorted, then narrowed to the active status filter (if any).
+function getVisibleBank() {
+  const sorted = getSortedBank();
+  if (bankFilterStatus === 'all') return sorted;
+  return sorted.filter(e => wordLearnStatus(e) === bankFilterStatus);
 }
 
 function removeFromMemoryBank(i) {
@@ -831,13 +861,19 @@ function renderMemoryBank() {
   recentBtn.textContent = bankSortField === 'recent' ? (bankSortDir === 'desc' ? 'Recent ▾' : 'Recent ▴') : 'Recent';
   recentBtn.title = 'Recent: nieuwste eerst / oudste eerst';
   recentBtn.onclick = () => setBankSort('recent');
-  const alphaBtn = document.createElement('button');
-  alphaBtn.className = 'sort-btn' + (bankSortField === 'alpha' ? ' active' : '');
-  alphaBtn.textContent = bankSortField === 'alpha' && bankSortDir === 'desc' ? 'Z-A' : 'A-Z';
-  alphaBtn.title = 'Alfabetisch: A-Z / Z-A';
-  alphaBtn.onclick = () => setBankSort('alpha');
+  const nlBtn = document.createElement('button');
+  nlBtn.className = 'sort-btn' + (bankSortField === 'alpha-nl' ? ' active' : '');
+  nlBtn.textContent = bankSortField === 'alpha-nl' && bankSortDir === 'desc' ? 'NL Z-A' : 'NL A-Z';
+  nlBtn.title = 'Sorteer op het Nederlandse woord: A-Z / Z-A';
+  nlBtn.onclick = () => setBankSort('alpha-nl');
+  const enBtn = document.createElement('button');
+  enBtn.className = 'sort-btn' + (bankSortField === 'alpha-en' ? ' active' : '');
+  enBtn.textContent = bankSortField === 'alpha-en' && bankSortDir === 'desc' ? 'EN Z-A' : 'EN A-Z';
+  enBtn.title = 'Sorteer op de Engelse vertaling: A-Z / Z-A';
+  enBtn.onclick = () => setBankSort('alpha-en');
   sortWrap.appendChild(recentBtn);
-  sortWrap.appendChild(alphaBtn);
+  sortWrap.appendChild(nlBtn);
+  sortWrap.appendChild(enBtn);
 
   const actionsWrap = document.createElement('div'); actionsWrap.className = 'bank-actions';
   const practiceBtn = document.createElement('button'); practiceBtn.className = 'btn-primary';
@@ -857,8 +893,27 @@ function renderMemoryBank() {
   toolbar.appendChild(actionsWrap);
   list.appendChild(toolbar);
 
+  const filterRow = document.createElement('div'); filterRow.className = 'bank-filter-row';
+  const counts = bankStatusCounts();
+  [['all', 'Alles'], ['learnt', 'Geleerd'], ['studying', 'In studie'], ['untested', 'Nog niet getest']].forEach(([status, label]) => {
+    const chip = document.createElement('button');
+    chip.className = 'filter-chip' + (bankFilterStatus === status ? ' active' : '');
+    chip.textContent = `${label} (${counts[status]})`;
+    chip.onclick = () => setBankFilter(status);
+    filterRow.appendChild(chip);
+  });
+  list.appendChild(filterRow);
+
+  const visible = getVisibleBank();
+  if (visible.length === 0) {
+    const empty = document.createElement('div'); empty.className = 'bank-empty';
+    empty.innerHTML = '<strong>Geen woorden met deze status</strong>Kies een ander filter hierboven.';
+    list.appendChild(empty);
+    return;
+  }
+
   const wrap = document.createElement('div'); wrap.className = 'bank-list';
-  getSortedBank().forEach((entry) => {
+  visible.forEach((entry) => {
     const i = memoryBank.indexOf(entry);
     const card = document.createElement('div'); card.className = 'bank-card';
     const wordRe = new RegExp(`(${entry.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
@@ -1146,6 +1201,7 @@ if (typeof savedAppState.currentIdx === 'number' && savedAppState.currentIdx >= 
 loadTextProgress();
 loadMemoryBank();
 loadBankSortMode();
+loadBankFilterStatus();
 loadStreak();
 loadText();
 if (savedAppState.activeTab === 'geheugenbank') {
