@@ -845,9 +845,12 @@ function getSortedBank() {
   return arr;
 }
 
+// Counts scoped to the active topic filter, so the chip numbers reflect what
+// you'd actually see if you tapped them — not the whole bank regardless of topic.
 function bankStatusCounts() {
-  const counts = { all: memoryBank.length, learnt: 0, studying: 0, untested: 0 };
-  memoryBank.forEach(e => { counts[wordLearnStatus(e)]++; });
+  const scoped = bankFilterTopic === 'all' ? memoryBank : memoryBank.filter(e => e.topic === bankFilterTopic);
+  const counts = { all: scoped.length, learnt: 0, studying: 0, untested: 0 };
+  scoped.forEach(e => { counts[wordLearnStatus(e)]++; });
   return counts;
 }
 
@@ -1015,25 +1018,41 @@ function shuffled(arr) {
   return out;
 }
 
+function buildPracticeQueue(entries) {
+  practiceQueue = shuffled(entries).map(entry => {
+    const options = sentencesForWord(entry);
+    const pick = options[Math.floor(Math.random() * options.length)];
+    return { word: entry.word, key: entry.key, gloss: entry.gloss, ...pick };
+  });
+  practiceIdx = 0;
+  practiceFlipped = false;
+  practiceShowEn = false;
+}
+
 // Whole list: one random sentence per word, so the same words come up in
 // different contexts across sessions instead of always the sentence they were
 // originally saved from.
 function startPractice() {
   const words = getVisibleBank();
   if (!words.length) return;
-  practiceQueue = shuffled(words).map(entry => {
-    const options = sentencesForWord(entry);
-    const pick = options[Math.floor(Math.random() * options.length)];
-    return { word: entry.word, key: entry.key, gloss: entry.gloss, ...pick };
-  });
+  buildPracticeQueue(words);
   practiceLabel = 'list';
-  practiceIdx = 0;
-  practiceFlipped = false;
-  practiceShowEn = false;
   bankViewMode = 'practice';
   bankSessionKind = 'flashcard';
   document.getElementById('bankListView').hidden = true;
   document.getElementById('bankPracticeView').hidden = false;
+  renderPracticeCard();
+}
+
+// "Nog een keer" on the whole-list flashcard session: redo the SAME set of
+// words rather than re-querying the live filter, since answering/tapping
+// during a quiz session can move a word's status and shrink a re-filtered set
+// out from under the user mid-review.
+function restartPracticeSameSet() {
+  const keys = new Set(practiceQueue.map(item => item.key));
+  const entries = memoryBank.filter(e => keys.has(e.key));
+  if (!entries.length) { exitPractice(); return; }
+  buildPracticeQueue(entries);
   renderPracticeCard();
 }
 
@@ -1100,7 +1119,7 @@ function renderPracticeCard() {
       `</div></div></div>`;
     // Bound in JS rather than inlined into an onclick attribute string, since
     // Dutch words can contain apostrophes (e.g. "z'n") that would break the markup.
-    container.querySelector('.practice-restart-btn').onclick = isWordDrill ? () => startPracticeWord(wordKey) : startPractice;
+    container.querySelector('.practice-restart-btn').onclick = isWordDrill ? () => startPracticeWord(wordKey) : restartPracticeSameSet;
     return;
   }
 
@@ -1158,10 +1177,8 @@ function pickDistractors(correctEntry, count) {
   return distractors;
 }
 
-function startVocabQuiz() {
-  const words = getVisibleBank();
-  if (!words.length) return;
-  quizQueue = shuffled(words).map(entry => {
+function buildQuizQueue(entries) {
+  quizQueue = shuffled(entries).map(entry => {
     const options = sentencesForWord(entry);
     const pick = options[Math.floor(Math.random() * options.length)];
     const choices = shuffled([entry.gloss, ...pickDistractors(entry, 3)]);
@@ -1171,10 +1188,28 @@ function startVocabQuiz() {
   quizScore = 0;
   quizAnswered = null;
   quizShowEn = false;
+}
+
+function startVocabQuiz() {
+  const words = getVisibleBank();
+  if (!words.length) return;
+  buildQuizQueue(words);
   bankViewMode = 'practice';
   bankSessionKind = 'quiz';
   document.getElementById('bankListView').hidden = true;
   document.getElementById('bankPracticeView').hidden = false;
+  renderQuizCard();
+}
+
+// "Nog een keer" on the quiz completion screen: redo the SAME set of words
+// rather than re-querying the live filter. Answering correctly during the quiz
+// can move a word from "in studie" to "geleerd", so re-filtering on restart
+// would silently shrink an "in studie" session out from under the user.
+function restartQuizSameSet() {
+  const keys = new Set(quizQueue.map(item => item.key));
+  const entries = memoryBank.filter(e => keys.has(e.key));
+  if (!entries.length) { exitPractice(); return; }
+  buildQuizQueue(entries);
   renderQuizCard();
 }
 
@@ -1240,7 +1275,7 @@ function renderQuizCard() {
       `<button class="btn-primary quiz-restart-btn">Nog een keer</button>` +
       `<button class="btn-secondary" onclick="exitPractice()">Terug naar lijst</button>` +
       `</div></div></div>`;
-    container.querySelector('.quiz-restart-btn').onclick = startVocabQuiz;
+    container.querySelector('.quiz-restart-btn').onclick = restartQuizSameSet;
     return;
   }
 
