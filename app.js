@@ -417,7 +417,7 @@ function showMilestoneToast(text) {
 const QUESTION_TYPE_ORDER = ['Detail', 'Hoofdgedachte', 'Inferentie', 'Woordbetekenis'];
 
 function computeStats() {
-  let completedCount = 0, scoreSum = 0, questionSum = 0;
+  let completedCount = 0, inProgressCount = 0, scoreSum = 0, questionSum = 0;
   const tierCounts = { 'score-green': 0, 'score-yellow': 0, 'score-orange': 0, 'score-red': 0 };
   const typeStats = {};
 
@@ -429,6 +429,8 @@ function computeStats() {
       scoreSum += s.score;
       questionSum += s.total;
       tierCounts[scoreClass(s.score, s.total)]++;
+    } else if (p && Array.isArray(p.originalAnswers) && p.originalAnswers.some(a => a != null)) {
+      inProgressCount++;
     }
     if (p && Array.isArray(p.originalAnswers)) {
       t.questions.forEach((q, qi) => {
@@ -446,6 +448,7 @@ function computeStats() {
 
   return {
     completedCount,
+    inProgressCount,
     avgPct: questionSum > 0 ? Math.round((scoreSum / questionSum) * 100) : null,
     tierCounts,
     typeStats,
@@ -498,6 +501,28 @@ function renderStats() {
     distHtml = `<div class="bank-empty">Maak een tekst af om je scoreverdeling te zien.</div>`;
   }
 
+  // Mirrors the word bank's "Voortgang" summary below (% + coloured bar + legend),
+  // reusing the same word-learnt/word-studying/word-untested colours so the two
+  // dashboards read consistently: done = green, in progress = gold, untouched = grey.
+  const notStartedCount = TEXTS.length - s.completedCount - s.inProgressCount;
+  const textTiers = [
+    { cls: 'word-learnt', label: 'Voltooid', count: s.completedCount },
+    { cls: 'word-studying', label: 'Bezig', count: s.inProgressCount },
+    { cls: 'word-untested', label: 'Niet begonnen', count: notStartedCount }
+  ];
+  const completedPct = Math.round((s.completedCount / TEXTS.length) * 100);
+  const textSegments = textTiers.map(t => {
+    if (!t.count) return '';
+    const width = Math.round((t.count / TEXTS.length) * 100);
+    return `<div class="dist-segment ${t.cls}" style="width:${width}%" title="${escapeHtml(t.label)}: ${t.count}"></div>`;
+  }).join('');
+  const textLegend = textTiers.map(t =>
+    `<div class="dist-legend-item"><span class="dist-dot ${t.cls}"></span>${escapeHtml(t.label)} <strong>${t.count}</strong></div>`
+  ).join('');
+  const textProgressSummaryHtml =
+    `<div class="wb-summary"><span class="wb-summary-pct">${completedPct}%</span> voltooid van ${TEXTS.length} teksten</div>` +
+    `<div class="dist-bar">${textSegments}</div><div class="dist-legend">${textLegend}</div>`;
+
   const wb = computeWordBankStats();
   const wordTiers = [
     { cls: 'word-learnt', label: 'Geleerd', count: wb.learnt },
@@ -527,6 +552,10 @@ function renderStats() {
     `<div class="stats-section">` +
     `<div class="stats-section-title">Nauwkeurigheid per vraagtype</div>` +
     `<div class="stat-bars">${typeRows}</div>` +
+    `</div>` +
+    `<div class="stats-section">` +
+    `<div class="stats-section-title">Voortgang teksten</div>` +
+    textProgressSummaryHtml +
     `</div>` +
     `<div class="stats-section">` +
     `<div class="stats-section-title">Verdeling van scores</div>` +
