@@ -24,14 +24,20 @@
   .count-badge{display:inline-block;background:var(--border);color:var(--muted);border-radius:9px;font-size:.68rem;font-weight:600;padding:1px 7px;margin-left:5px;vertical-align:middle}
   .tab-panel{display:none}.tab-panel.active{display:block}
   .picker-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+  .picker-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .picker-label{font-size:.72rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--label)}
   .picker-nav{display:flex;align-items:center;gap:8px}
+  .fav-filter-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:4px 12px;border-radius:14px;font-family:'IBM Plex Sans',sans-serif;font-size:.75rem;font-weight:600;cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .fav-filter-btn:hover{border-color:#c9a227;color:#c9a227}
+  .fav-filter-btn.active{background:#c9a227;border-color:#c9a227;color:#fff}
+  .dots-empty{font-size:.85rem;color:var(--muted)}
   .nav-btn{background:var(--surface);border:1px solid var(--border);border-radius:3px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;color:var(--muted);transition:border-color .12s,color .12s}
   .nav-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
   .nav-btn:disabled{opacity:.35;cursor:default}
   .nav-counter{font-size:.82rem;color:var(--muted);min-width:52px;text-align:center}
   .topic-dots{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
-  .topic-dot{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--border);background:transparent;cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s;padding:0}
+  .topic-dot{position:relative;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--border);background:transparent;cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s;padding:0}
+  .topic-dot.favourite::after{content:'';position:absolute;top:-3px;right:-3px;width:5px;height:5px;border-radius:50%;background:#c9a227;border:1px solid var(--surface)}
   .topic-dot.in-progress{background:var(--accent-light);border-color:var(--accent)}
   .topic-dot.score-green{background:var(--accent);border-color:var(--accent)}
   .topic-dot.score-yellow{background:#c9a227;border-color:#c9a227}
@@ -98,7 +104,10 @@
   .en-toggle-btn:hover{border-color:var(--accent);color:var(--accent)}
   .en-toggle-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
   .en-toggle-btn[hidden]{display:none}
-  .passage-meta .en-toggle-btn{margin-left:auto}
+  .passage-meta .fav-star-btn{margin-left:auto}
+  .fav-star-btn{background:none;border:none;font-size:1.05rem;line-height:1;color:var(--border);cursor:pointer;padding:2px;flex-shrink:0;transition:color .12s,transform .12s}
+  .fav-star-btn:hover{color:#c9a227;transform:scale(1.1)}
+  .fav-star-btn.active{color:#c9a227}
   .meta-right{display:flex;align-items:center;gap:8px}
   .tapword{cursor:pointer;border-radius:2px;padding:0 1px;touch-action:manipulation;transition:background .1s}
   .tapword:hover{background:var(--accent-light)}
@@ -123,6 +132,7 @@
   .filter-chip{background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:4px 12px;border-radius:14px;font-family:'IBM Plex Sans',sans-serif;font-size:.75rem;font-weight:600;cursor:pointer;transition:border-color .12s,color .12s,background .12s}
   .filter-chip:hover{border-color:var(--accent);color:var(--accent)}
   .filter-chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .fav-filter-chip.active{background:#c9a227;border-color:#c9a227}
   .bank-topic-select{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:14px;font-family:'IBM Plex Sans',sans-serif;font-size:.75rem;font-weight:600;cursor:pointer;margin-left:auto}
   .bank-topic-select:hover{border-color:var(--accent)}
   .bank-status{font-size:.72rem;font-weight:700;padding:2px 9px;border-radius:9px;white-space:nowrap;flex-shrink:0}
@@ -133,7 +143,11 @@
   .bank-list{display:flex;flex-direction:column;gap:12px}
   .bank-card{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px 16px;position:relative}
   .bank-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding-right:20px}
+  .bank-word-group{display:flex;align-items:center;gap:4px}
   .bank-word{font-family:'IBM Plex Serif',serif;font-size:1rem;font-weight:600}
+  .bank-fav-btn{background:none;border:none;font-size:.95rem;line-height:1;color:var(--border);cursor:pointer;padding:2px;flex-shrink:0;transition:color .12s,transform .12s}
+  .bank-fav-btn:hover{color:#c9a227;transform:scale(1.1)}
+  .bank-fav-btn.active{color:#c9a227}
   .bank-gloss{font-size:.83rem;color:var(--accent);margin-top:2px}
   .bank-sentence{font-size:.85rem;color:var(--muted);line-height:1.5;margin-top:8px}
   .bank-sentence mark{background:var(--highlight-bg);border-radius:2px;padding:0 1px;font-style:normal}
@@ -206,7 +220,10 @@
   </div>
   <div class="tab-panel active" id="tab-oefening">
     <div class="picker-header">
-      <span class="picker-label">Tekst kiezen</span>
+      <div class="picker-left">
+        <span class="picker-label">Tekst kiezen</span>
+        <button class="fav-filter-btn" id="favTextsFilterBtn" onclick="toggleShowOnlyFavouriteTexts()">&#9733; Favorieten</button>
+      </div>
       <div class="picker-nav">
         <button class="nav-btn" id="prevBtn" onclick="goTo(currentIdx-1)">&#8592;</button>
         <span class="nav-counter" id="navCounter"></span>
@@ -221,7 +238,7 @@
     </div>
     <div id="exerciseArea">
       <div class="passage-card">
-        <div class="passage-meta"><span class="passage-label">Tekst &mdash; lees aandachtig</span><span class="topic-tag" id="topicTag"></span><button class="en-toggle-btn" id="passageEnBtn" onclick="togglePassageEN()">EN</button></div>
+        <div class="passage-meta"><span class="passage-label">Tekst &mdash; lees aandachtig</span><span class="topic-tag" id="topicTag"></span><button class="fav-star-btn" id="textFavBtn" onclick="toggleTextFavourite(currentIdx)">&#9733;</button><button class="en-toggle-btn" id="passageEnBtn" onclick="togglePassageEN()">EN</button></div>
         <div class="passage-title" id="passageTitle"></div>
         <div class="passage-text" id="passageBody"></div>
       </div>

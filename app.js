@@ -17,6 +17,9 @@ let bankSortField = 'recent'; // 'recent' | 'alpha-nl' | 'alpha-en'
 let bankSortDir = 'desc';     // 'asc' or 'desc' — meaning depends on the field; persisted
 let bankFilterStatus = 'all'; // 'all' | 'learnt' | 'studying' | 'untested'; persisted
 let bankFilterTopic = 'all';  // 'all' or an exact topic string; persisted
+let bankFilterFavOnly = false; // show only favourited words; persisted
+let favouriteTextIdx = {};    // { [textIdx]: true } — favourited texts, persisted
+let showOnlyFavouriteTexts = false; // filters the topic-dots row to favourites; persisted
 
 function isAnswered(qi) { return answers[qi] !== null && answers[qi] !== undefined; }
 function isCorrect(qi)  { return isAnswered(qi) && answers[qi] === currentQuestions[qi].correct; }
@@ -105,6 +108,7 @@ function loadText() {
   const passageEnBtn = document.getElementById('passageEnBtn');
   passageEnBtn.hidden = !t.en;
   passageEnBtn.classList.remove('active');
+  updateTextFavBtn();
   renderPassage();
   document.getElementById('scoreBar').classList.remove('show');
   document.getElementById('scoreBar').innerHTML = '';
@@ -146,9 +150,13 @@ function scoreForProgress(idx) {
 
 function renderDots() {
   const c = document.getElementById('topicDots'); c.innerHTML = '';
+  let shown = 0;
   TEXTS.forEach((t, i) => {
+    if (showOnlyFavouriteTexts && !isTextFavourite(i)) return;
+    shown++;
     const d = document.createElement('button');
-    d.className = 'topic-dot'; d.title = t.title;
+    d.className = 'topic-dot' + (isTextFavourite(i) ? ' favourite' : '');
+    d.title = t.title;
     if (i === currentIdx) d.classList.add('active');
     const p = textProgress[i];
     if (isTextComplete(p)) {
@@ -160,6 +168,47 @@ function renderDots() {
     d.onclick = () => goTo(i);
     c.appendChild(d);
   });
+  if (shown === 0 && showOnlyFavouriteTexts) {
+    c.innerHTML = '<div class="dots-empty">Nog geen favoriete teksten. Tik op &#9733; bij een tekst om er een toe te voegen.</div>';
+  }
+}
+
+// ─── Favourite texts ──────────────────────────────────────────────────────────
+function loadFavouriteTexts() {
+  try { favouriteTextIdx = JSON.parse(localStorage.getItem('favouriteTexts') || '{}'); }
+  catch (e) { favouriteTextIdx = {}; }
+}
+
+function saveFavouriteTexts() {
+  localStorage.setItem('favouriteTexts', JSON.stringify(favouriteTextIdx));
+}
+
+function isTextFavourite(idx) { return !!favouriteTextIdx[idx]; }
+
+function toggleTextFavourite(idx) {
+  if (favouriteTextIdx[idx]) delete favouriteTextIdx[idx];
+  else favouriteTextIdx[idx] = true;
+  saveFavouriteTexts();
+  updateTextFavBtn();
+  renderDots();
+}
+
+function updateTextFavBtn() {
+  const btn = document.getElementById('textFavBtn');
+  const fav = isTextFavourite(currentIdx);
+  btn.classList.toggle('active', fav);
+  btn.title = fav ? 'Verwijderen uit favorieten' : 'Toevoegen aan favorieten';
+}
+
+function loadShowOnlyFavouriteTexts() {
+  showOnlyFavouriteTexts = localStorage.getItem('showOnlyFavouriteTexts') === '1';
+}
+
+function toggleShowOnlyFavouriteTexts() {
+  showOnlyFavouriteTexts = !showOnlyFavouriteTexts;
+  localStorage.setItem('showOnlyFavouriteTexts', showOnlyFavouriteTexts ? '1' : '0');
+  document.getElementById('favTextsFilterBtn').classList.toggle('active', showOnlyFavouriteTexts);
+  renderDots();
 }
 
 // ─── Pips ─────────────────────────────────────────────────────────────────────
@@ -807,6 +856,22 @@ function setBankFilterTopic(topic) {
   renderMemoryBank();
 }
 
+function loadBankFilterFavOnly() {
+  bankFilterFavOnly = localStorage.getItem('bankFilterFavOnly') === '1';
+}
+
+function toggleBankFilterFavOnly() {
+  bankFilterFavOnly = !bankFilterFavOnly;
+  localStorage.setItem('bankFilterFavOnly', bankFilterFavOnly ? '1' : '0');
+  renderMemoryBank();
+}
+
+function toggleWordFavourite(i) {
+  memoryBank[i].favourite = !memoryBank[i].favourite;
+  saveMemoryBank();
+  renderMemoryBank();
+}
+
 // Distinct topics currently represented in the bank, alphabetical — used to
 // populate the topic filter dropdown (the topic itself isn't shown on cards).
 function bankTopics() {
@@ -845,20 +910,23 @@ function getSortedBank() {
   return arr;
 }
 
-// Counts scoped to the active topic filter, so the chip numbers reflect what
-// you'd actually see if you tapped them — not the whole bank regardless of topic.
+// Counts scoped to the active topic + favourites-only filters, so the chip
+// numbers reflect what you'd actually see if you tapped them — not the whole
+// bank regardless of the other active filters.
 function bankStatusCounts() {
-  const scoped = bankFilterTopic === 'all' ? memoryBank : memoryBank.filter(e => e.topic === bankFilterTopic);
+  let scoped = bankFilterTopic === 'all' ? memoryBank : memoryBank.filter(e => e.topic === bankFilterTopic);
+  if (bankFilterFavOnly) scoped = scoped.filter(e => e.favourite);
   const counts = { all: scoped.length, learnt: 0, studying: 0, untested: 0 };
   scoped.forEach(e => { counts[wordLearnStatus(e)]++; });
   return counts;
 }
 
-// Sorted, then narrowed to the active status and topic filters (if any).
+// Sorted, then narrowed to the active status, topic, and favourites filters (if any).
 function getVisibleBank() {
   let arr = getSortedBank();
   if (bankFilterStatus !== 'all') arr = arr.filter(e => wordLearnStatus(e) === bankFilterStatus);
   if (bankFilterTopic !== 'all') arr = arr.filter(e => e.topic === bankFilterTopic);
+  if (bankFilterFavOnly) arr = arr.filter(e => e.favourite);
   return arr;
 }
 
@@ -934,6 +1002,13 @@ function renderMemoryBank() {
     filterRow.appendChild(chip);
   });
 
+  const favScopeCount = (bankFilterTopic === 'all' ? memoryBank : memoryBank.filter(e => e.topic === bankFilterTopic)).filter(e => e.favourite).length;
+  const favChip = document.createElement('button');
+  favChip.className = 'filter-chip fav-filter-chip' + (bankFilterFavOnly ? ' active' : '');
+  favChip.textContent = `★ Favorieten (${favScopeCount})`;
+  favChip.onclick = toggleBankFilterFavOnly;
+  filterRow.appendChild(favChip);
+
   const topics = bankTopics();
   if (bankFilterTopic !== 'all' && !topics.includes(bankFilterTopic)) {
     bankFilterTopic = 'all';
@@ -964,15 +1039,19 @@ function renderMemoryBank() {
     const wordRe = new RegExp(`(${entry.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'i');
     const sentenceHtml = escapeHtml(entry.sentence).replace(wordRe, '<mark>$1</mark>');
     const otherSentenceCount = sentencesForWord(entry).length - 1;
+    const favActive = entry.favourite ? ' active' : '';
+    const favTitle = entry.favourite ? 'Verwijderen uit favorieten' : 'Toevoegen aan favorieten';
     card.innerHTML =
       `<button class="bank-remove" title="Verwijderen">&times;</button>` +
-      `<div class="bank-card-header"><span class="bank-word">${escapeHtml(entry.word)}</span>${wordStatusBadge(entry)}</div>` +
+      `<div class="bank-card-header"><span class="bank-word-group"><span class="bank-word">${escapeHtml(entry.word)}</span>` +
+      `<button class="bank-fav-btn${favActive}" title="${favTitle}">&#9733;</button></span>${wordStatusBadge(entry)}</div>` +
       `<div class="bank-gloss">${escapeHtml(entry.gloss || '(geen vertaling)')}</div>` +
       `<div class="bank-sentence">${sentenceHtml}</div>` +
       (otherSentenceCount > 0
         ? `<button class="bank-word-practice">Oefen dit woord (${otherSentenceCount + 1} zinnen) &rarr;</button>`
         : '');
     card.querySelector('.bank-remove').onclick = () => removeFromMemoryBank(i);
+    card.querySelector('.bank-fav-btn').onclick = () => toggleWordFavourite(i);
     const wordPracticeBtn = card.querySelector('.bank-word-practice');
     if (wordPracticeBtn) wordPracticeBtn.onclick = () => startPracticeWord(entry.key);
     wrap.appendChild(card);
@@ -1334,6 +1413,10 @@ loadMemoryBank();
 loadBankSortMode();
 loadBankFilterStatus();
 loadBankFilterTopic();
+loadBankFilterFavOnly();
+loadFavouriteTexts();
+loadShowOnlyFavouriteTexts();
+document.getElementById('favTextsFilterBtn').classList.toggle('active', showOnlyFavouriteTexts);
 loadStreak();
 loadText();
 if (savedAppState.activeTab === 'geheugenbank') {
