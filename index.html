@@ -225,9 +225,9 @@
         <button class="fav-filter-btn" id="favTextsFilterBtn" onclick="toggleShowOnlyFavouriteTexts()">&#9733; Favorieten</button>
       </div>
       <div class="picker-nav">
-        <button class="nav-btn" id="prevBtn" onclick="goTo(currentIdx-1)">&#8592;</button>
+        <button class="nav-btn" id="prevBtn" onclick="goToPrevText()">&#8592;</button>
         <span class="nav-counter" id="navCounter"></span>
-        <button class="nav-btn" id="nextBtn" onclick="goTo(currentIdx+1)">&#8594;</button>
+        <button class="nav-btn" id="nextBtn" onclick="goToNextText()">&#8594;</button>
       </div>
     </div>
     <div class="topic-dots" id="topicDots"></div>
@@ -269,10 +269,12 @@
 </div>
 <div class="word-tooltip" id="wordTooltip"></div>
 <div class="milestone-toast" id="milestoneToast"></div>
-<script src="texts.js"></script>
-<script src="glossary.js"></script>
-<script src="wordindex.js"></script>
-<script src="sentenceindex.js"></script>
-<script src="app.js"></script>
+<!-- Bump the ?v= on every deploy that changes these files: GitHub Pages / mobile
+     Safari can otherwise keep serving a stale cached copy after an update. -->
+<script src="texts.js?v=2"></script>
+<script src="glossary.js?v=2"></script>
+<script src="wordindex.js?v=2"></script>
+<script src="sentenceindex.js?v=2"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

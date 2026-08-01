@@ -88,6 +88,29 @@ function goToNext() {
   goTo((currentIdx + 1) % TEXTS.length);
 }
 
+function favouriteTextIndices() {
+  return TEXTS.map((_, i) => i).filter(isTextFavourite);
+}
+
+// The prev/next arrows normally just step ±1 through the full list. When the
+// favourites filter is on (matching what the dots row already shows), they
+// instead cycle only through favourited texts, wrapping at each end.
+function goToPrevText() {
+  if (!showOnlyFavouriteTexts) { goTo(currentIdx - 1); return; }
+  const favs = favouriteTextIndices();
+  if (!favs.length) return;
+  const pos = favs.indexOf(currentIdx);
+  goTo(favs[pos <= 0 ? favs.length - 1 : pos - 1]);
+}
+
+function goToNextText() {
+  if (!showOnlyFavouriteTexts) { goTo(currentIdx + 1); return; }
+  const favs = favouriteTextIndices();
+  if (!favs.length) return;
+  const pos = favs.indexOf(currentIdx);
+  goTo(favs[pos === -1 || pos === favs.length - 1 ? 0 : pos + 1]);
+}
+
 function loadText() {
   const t = TEXTS[currentIdx];
   showEnPassage = false;
@@ -122,8 +145,15 @@ function loadText() {
 
 function updateNav() {
   document.getElementById('navCounter').textContent = `${currentIdx + 1} / ${TEXTS.length}`;
-  document.getElementById('prevBtn').disabled = currentIdx === 0;
-  document.getElementById('nextBtn').disabled = currentIdx === TEXTS.length - 1;
+  if (showOnlyFavouriteTexts) {
+    // Cycling wraps, so there's only nowhere to go with 0 or 1 favourites.
+    const disable = favouriteTextIndices().length <= 1;
+    document.getElementById('prevBtn').disabled = disable;
+    document.getElementById('nextBtn').disabled = disable;
+  } else {
+    document.getElementById('prevBtn').disabled = currentIdx === 0;
+    document.getElementById('nextBtn').disabled = currentIdx === TEXTS.length - 1;
+  }
 }
 
 function scoreClass(score, total) {
@@ -191,6 +221,7 @@ function toggleTextFavourite(idx) {
   saveFavouriteTexts();
   updateTextFavBtn();
   renderDots();
+  updateNav();
 }
 
 function updateTextFavBtn() {
@@ -209,6 +240,7 @@ function toggleShowOnlyFavouriteTexts() {
   localStorage.setItem('showOnlyFavouriteTexts', showOnlyFavouriteTexts ? '1' : '0');
   document.getElementById('favTextsFilterBtn').classList.toggle('active', showOnlyFavouriteTexts);
   renderDots();
+  updateNav();
 }
 
 // ─── Pips ─────────────────────────────────────────────────────────────────────
