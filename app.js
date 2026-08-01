@@ -449,7 +449,7 @@ function showMilestoneToast(text) {
 const QUESTION_TYPE_ORDER = ['Detail', 'Hoofdgedachte', 'Inferentie', 'Woordbetekenis'];
 
 function computeStats() {
-  let completedCount = 0, inProgressCount = 0, scoreSum = 0, questionSum = 0;
+  let completedCount = 0, scoreSum = 0, questionSum = 0;
   const tierCounts = { 'score-green': 0, 'score-yellow': 0, 'score-orange': 0, 'score-red': 0 };
   const typeStats = {};
 
@@ -461,8 +461,6 @@ function computeStats() {
       scoreSum += s.score;
       questionSum += s.total;
       tierCounts[scoreClass(s.score, s.total)]++;
-    } else if (p && Array.isArray(p.originalAnswers) && p.originalAnswers.some(a => a != null)) {
-      inProgressCount++;
     }
     if (p && Array.isArray(p.originalAnswers)) {
       t.questions.forEach((q, qi) => {
@@ -480,7 +478,6 @@ function computeStats() {
 
   return {
     completedCount,
-    inProgressCount,
     avgPct: questionSum > 0 ? Math.round((scoreSum / questionSum) * 100) : null,
     tierCounts,
     typeStats,
@@ -511,36 +508,17 @@ function renderStats() {
     return `<div class="stat-bar-row"><div class="stat-bar-label">${escapeHtml(type)}</div><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${pct}%"></div></div><div class="stat-bar-value">${pct}% <span class="stat-bar-count">(${st.correct}/${st.total})</span></div></div>`;
   }).join('');
 
-  const tiers = [
-    { cls: 'score-green', label: 'Uitstekend (5/5)' },
-    { cls: 'score-yellow', label: 'Goed (4/5)' },
-    { cls: 'score-orange', label: 'Matig (3/5)' },
-    { cls: 'score-red', label: '2/5 of lager' }
-  ];
-  let distHtml;
-  if (s.completedCount > 0) {
-    const segments = tiers.map(t => {
-      const count = s.tierCounts[t.cls];
-      if (!count) return '';
-      const width = Math.round((count / s.completedCount) * 100);
-      return `<div class="dist-segment ${t.cls}" style="width:${width}%" title="${escapeHtml(t.label)}: ${count}"></div>`;
-    }).join('');
-    const legend = tiers.map(t =>
-      `<div class="dist-legend-item"><span class="dist-dot ${t.cls}"></span>${escapeHtml(t.label)} <strong>${s.tierCounts[t.cls]}</strong></div>`
-    ).join('');
-    distHtml = `<div class="dist-bar">${segments}</div><div class="dist-legend">${legend}</div>`;
-  } else {
-    distHtml = `<div class="bank-empty">Maak een tekst af om je scoreverdeling te zien.</div>`;
-  }
-
-  // Mirrors the word bank's "Voortgang" summary below (% + coloured bar + legend),
-  // reusing the same word-learnt/word-studying/word-untested colours so the two
-  // dashboards read consistently: done = green, in progress = gold, untouched = grey.
-  const notStartedCount = TEXTS.length - s.completedCount - s.inProgressCount;
+  // One combined bar/legend, percentages of ALL texts (not just completed ones),
+  // mirroring the word bank's "Voortgang" summary below: a big % + coloured bar +
+  // legend. Score tiers only ever cover completed texts, so anything not yet
+  // completed (in progress or untouched) simply falls into the grey "Niet
+  // begonnen" bucket, same as the word bank's grey "Nog niet getest".
   const textTiers = [
-    { cls: 'word-learnt', label: 'Voltooid', count: s.completedCount },
-    { cls: 'word-studying', label: 'Bezig', count: s.inProgressCount },
-    { cls: 'word-untested', label: 'Niet begonnen', count: notStartedCount }
+    { cls: 'score-green', label: 'Uitstekend (5/5)', count: s.tierCounts['score-green'] },
+    { cls: 'score-yellow', label: 'Goed (4/5)', count: s.tierCounts['score-yellow'] },
+    { cls: 'score-orange', label: 'Matig (3/5)', count: s.tierCounts['score-orange'] },
+    { cls: 'score-red', label: '2/5 of lager', count: s.tierCounts['score-red'] },
+    { cls: 'word-untested', label: 'Niet begonnen', count: TEXTS.length - s.completedCount }
   ];
   const completedPct = Math.round((s.completedCount / TEXTS.length) * 100);
   const textSegments = textTiers.map(t => {
@@ -588,10 +566,6 @@ function renderStats() {
     `<div class="stats-section">` +
     `<div class="stats-section-title">Voortgang teksten</div>` +
     textProgressSummaryHtml +
-    `</div>` +
-    `<div class="stats-section">` +
-    `<div class="stats-section-title">Verdeling van scores</div>` +
-    distHtml +
     `</div>` +
     `<div class="stats-section">` +
     `<div class="stats-section-title">Voortgang woordenbank</div>` +
