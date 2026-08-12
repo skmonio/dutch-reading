@@ -1502,7 +1502,7 @@ function renderQuizCard() {
     wordMeaningsBtnHtml +
     `</div>` +
     `<div class="practice-nav">` +
-    `<button class="btn-back" ${quizViewIdx === 0 ? 'disabled' : ''} onclick="quizViewPrev()">&larr; Vorige</button>` +
+    (quizViewIdx > 0 ? `<button class="btn-back" onclick="quizViewPrev()">&larr; Vorige</button>` : '') +
     `<button class="btn-secondary" onclick="exitPractice()">Stoppen</button>` +
     forwardBtnHtml +
     `</div></div>`;
