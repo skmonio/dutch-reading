@@ -1267,9 +1267,9 @@ function renderPracticeCard() {
 // Retrieval practice (recall the meaning, then check) beats passively flipping a
 // card for retention, so this is a second, more active mode alongside Oefenen.
 let quizQueue = [];
-let quizIdx = 0;
+let quizIdx = 0; // the live question — the next one still to be answered
+let quizViewIdx = 0; // the question currently on screen; < quizIdx while looking back at earlier answers
 let quizScore = 0;
-let quizAnswered = null; // the option text the user picked, or null before they answer
 let quizShowEn = false;
 
 // Wrong-answer options for one word: prefer other saved words' glosses (so the
@@ -1296,11 +1296,11 @@ function buildQuizQueue(entries) {
     const options = sentencesForWord(entry);
     const pick = options[Math.floor(Math.random() * options.length)];
     const choices = shuffled([entry.gloss, ...pickDistractors(entry, 3)]);
-    return { word: entry.word, key: entry.key, gloss: entry.gloss, sentence: pick.sentence, sourceTitle: pick.sourceTitle, topic: pick.topic, choices };
+    return { word: entry.word, key: entry.key, gloss: entry.gloss, sentence: pick.sentence, sourceTitle: pick.sourceTitle, topic: pick.topic, choices, answered: null };
   });
   quizIdx = 0;
+  quizViewIdx = 0;
   quizScore = 0;
-  quizAnswered = null;
   quizShowEn = false;
 }
 
@@ -1328,9 +1328,12 @@ function restartQuizSameSet() {
 }
 
 function selectQuizOption(choiceText) {
-  if (quizAnswered != null) return;
-  quizAnswered = choiceText;
+  // Only the live question can be answered — a question being looked back at
+  // (quizViewIdx < quizIdx) is already answered and its options aren't clickable.
+  if (quizViewIdx !== quizIdx) return;
   const item = quizQueue[quizIdx];
+  if (!item || item.answered != null) return;
+  item.answered = choiceText;
   const correct = choiceText === item.gloss;
   if (correct) quizScore++;
   recordQuizResult(item.key, correct);
@@ -1365,9 +1368,31 @@ function wordStatusBadge(entry) {
   return `<span class="bank-status ${cls}">${pct}%</span>`;
 }
 
-function quizNext() {
+// Advances the live frontier after the current question has been answered —
+// distinct from quizViewPrev/quizViewNext, which only move the on-screen
+// pointer back and forth over already-answered questions without touching
+// quizIdx, the score, or quizStats.
+function quizAdvance() {
   quizIdx++;
-  quizAnswered = null;
+  quizViewIdx = quizIdx;
+  quizShowEn = false;
+  renderQuizCard();
+}
+
+// Step back to look at an earlier (already-answered) question. Purely a view
+// change: it doesn't re-open the question for answering or affect the score.
+function quizViewPrev() {
+  if (quizViewIdx <= 0) return;
+  quizViewIdx--;
+  quizShowEn = false;
+  renderQuizCard();
+}
+
+// Step forward again, either to the next reviewed question or back to the
+// live one/the completion screen once quizViewIdx catches up to quizIdx.
+function quizViewNext() {
+  if (quizViewIdx >= quizQueue.length) return;
+  quizViewIdx++;
   quizShowEn = false;
   renderQuizCard();
 }
@@ -1380,23 +1405,30 @@ function toggleQuizEn() {
 function renderQuizCard() {
   const container = document.getElementById('bankPracticeView');
 
-  if (quizIdx >= quizQueue.length) {
+  if (quizViewIdx >= quizQueue.length) {
     const pct = quizQueue.length ? Math.round((quizScore / quizQueue.length) * 100) : 0;
     container.innerHTML =
       `<div class="bank-practice-inner"><div class="practice-done">` +
       `<div class="practice-done-title">Klaar! Je scoorde ${quizScore}/${quizQueue.length} (${pct}%).</div>` +
       `<div class="practice-done-actions">` +
+      (quizQueue.length ? `<button class="btn-back quiz-review-btn">&larr; Bekijk antwoorden</button>` : '') +
       `<button class="btn-primary quiz-restart-btn">Nog een keer</button>` +
       `<button class="btn-secondary" onclick="exitPractice()">Terug naar lijst</button>` +
       `</div></div></div>`;
     container.querySelector('.quiz-restart-btn').onclick = restartQuizSameSet;
+    const reviewBtn = container.querySelector('.quiz-review-btn');
+    if (reviewBtn) reviewBtn.onclick = quizViewPrev;
     return;
   }
 
-  const item = quizQueue[quizIdx];
+  // Looking back at an earlier, already-answered question: reviewing, not
+  // re-answering. The live question (quizViewIdx === quizIdx) is the only one
+  // that's ever open for a fresh answer.
+  const reviewing = quizViewIdx < quizIdx;
+  const item = quizQueue[quizViewIdx];
   const enSentence = sentenceTranslation(item.sentence);
   const source = { title: item.sourceTitle, topic: item.topic };
-  const answered = quizAnswered != null;
+  const answered = item.answered != null;
   const sentenceHtml = (quizShowEn && enSentence)
     ? escapeHtml(enSentence)
     : answered
@@ -1405,18 +1437,28 @@ function renderQuizCard() {
   const enToggleHtml = (answered && enSentence)
     ? `<button class="sentence-en-toggle" onclick="toggleQuizEn()">${quizShowEn ? 'NL' : 'EN'}</button>`
     : '';
+  const progressHtml = `${quizViewIdx + 1} / ${quizQueue.length} &middot; ${quizScore} goed` +
+    (reviewing ? ` &middot; bekijken` : '');
+
+  let forwardBtnHtml = '';
+  if (reviewing) {
+    forwardBtnHtml = `<button class="btn-primary quiz-forward-btn">Volgende &rarr;</button>`;
+  } else if (answered) {
+    forwardBtnHtml = `<button class="btn-primary quiz-forward-btn">${quizIdx === quizQueue.length - 1 ? 'Klaar' : 'Volgende &rarr;'}</button>`;
+  }
 
   container.innerHTML =
     `<div class="bank-practice-inner">` +
-    `<div class="practice-progress">${quizIdx + 1} / ${quizQueue.length} &middot; ${quizScore} goed</div>` +
+    `<div class="practice-progress">${progressHtml}</div>` +
     `<div class="practice-card">` +
     `<div class="practice-sentence">${sentenceHtml}${enToggleHtml}</div>` +
     `<div class="quiz-question">Wat betekent <strong>${escapeHtml(item.word)}</strong>?</div>` +
     `<div class="options quiz-options"></div>` +
     `</div>` +
     `<div class="practice-nav">` +
+    `<button class="btn-back" ${quizViewIdx === 0 ? 'disabled' : ''} onclick="quizViewPrev()">&larr; Vorige</button>` +
     `<button class="btn-secondary" onclick="exitPractice()">Stoppen</button>` +
-    (answered ? `<button class="btn-primary quiz-next-btn">${quizIdx === quizQueue.length - 1 ? 'Klaar' : 'Volgende &rarr;'}</button>` : '') +
+    forwardBtnHtml +
     `</div></div>`;
 
   const opts = container.querySelector('.quiz-options');
@@ -1425,7 +1467,7 @@ function renderQuizCard() {
     if (answered) {
       div.classList.add('disabled');
       if (choice === item.gloss) div.classList.add('correct');
-      else if (choice === quizAnswered) div.classList.add('wrong');
+      else if (choice === item.answered) div.classList.add('wrong');
     }
     const letter = document.createElement('span'); letter.className = 'option-letter';
     letter.textContent = String.fromCharCode(65 + oi);
@@ -1435,7 +1477,8 @@ function renderQuizCard() {
     opts.appendChild(div);
   });
 
-  if (answered) container.querySelector('.quiz-next-btn').onclick = quizNext;
+  const forwardBtn = container.querySelector('.quiz-forward-btn');
+  if (forwardBtn) forwardBtn.onclick = reviewing ? quizViewNext : quizAdvance;
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
