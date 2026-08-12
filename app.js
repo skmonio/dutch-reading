@@ -1496,8 +1496,8 @@ function renderQuizCard() {
     `<div class="bank-practice-inner">` +
     `<div class="practice-progress">${progressHtml}</div>` +
     `<div class="practice-card">` +
-    sentenceBlockHtml +
     `<div class="quiz-question">Wat betekent <strong>${escapeHtml(item.word)}</strong>?</div>` +
+    sentenceBlockHtml +
     `<div class="options quiz-options"></div>` +
     wordMeaningsBtnHtml +
     `</div>` +
