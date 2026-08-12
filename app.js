@@ -413,6 +413,46 @@ function saveStreak() {
   localStorage.setItem('streakData', JSON.stringify({ streak, bestStreak }));
 }
 
+// ─── Theme: Licht / Donker / Lezen (sepia) ──────────────────────────────────────
+// A tiny inline script in <head> already applies a saved (or OS-dark-preferred)
+// theme before first paint to avoid a flash; this just keeps the toggle button
+// and localStorage in sync with that during normal use.
+const THEMES = ['light', 'dark', 'sepia'];
+const THEME_ICON = { light: '☀️', dark: '\u{1F319}', sepia: '\u{1F4D6}' };
+const THEME_LABEL = { light: 'Licht', dark: 'Donker', sepia: 'Lezen' };
+
+// What's effectively showing right now, including the case where nothing has
+// been explicitly chosen yet and we're just following the OS's dark setting.
+function effectiveTheme() {
+  let stored = null;
+  try { stored = localStorage.getItem('theme'); } catch (e) {}
+  if (stored && THEMES.includes(stored)) return stored;
+  if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+  return 'light';
+}
+
+function applyTheme(theme) {
+  if (theme === 'light') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) {
+    btn.textContent = THEME_ICON[theme];
+    btn.title = `Thema: ${THEME_LABEL[theme]} (klik om te wisselen)`;
+  }
+}
+
+function loadTheme() {
+  applyTheme(effectiveTheme());
+}
+
+// Cycling always pins an explicit choice — once you've touched the toggle,
+// it stops following the OS setting until you land back on Licht.
+function cycleTheme() {
+  const next = THEMES[(THEMES.indexOf(effectiveTheme()) + 1) % THEMES.length];
+  applyTheme(next);
+  try { localStorage.setItem('theme', next); } catch (e) {}
+}
+
 function updateStreakBadge() {
   const el = document.getElementById('streakBadge');
   if (!el) return;
@@ -1536,6 +1576,7 @@ function renderQuizCard() {
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
+loadTheme();
 const savedAppState = loadAppState();
 if (typeof savedAppState.currentIdx === 'number' && savedAppState.currentIdx >= 0 && savedAppState.currentIdx < TEXTS.length) {
   currentIdx = savedAppState.currentIdx;
