@@ -1316,7 +1316,7 @@ function renderPracticeCard() {
     `<div class="practice-progress">${practiceIdx + 1} / ${practiceQueue.length}</div>` +
     `<div class="practice-card"><div class="practice-sentence">${sentenceHtml}${enToggleHtml}</div>${backHtml}</div>` +
     `<div class="practice-nav">` +
-    `<button class="btn-back" ${practiceIdx === 0 ? 'disabled' : ''} onclick="practicePrev()">&larr; Vorige</button>` +
+    (practiceIdx > 0 ? `<button class="btn-back" onclick="practicePrev()">&larr; Vorige</button>` : '') +
     `<button class="btn-secondary" onclick="exitPractice()">Stoppen</button>` +
     `<button class="btn-primary" onclick="practiceNext()">${practiceIdx === practiceQueue.length - 1 ? 'Klaar' : 'Volgende &rarr;'}</button>` +
     `</div></div>`;
