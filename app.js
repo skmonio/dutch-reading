@@ -136,6 +136,7 @@ function loadText() {
   document.getElementById('scoreBar').classList.remove('show');
   document.getElementById('scoreBar').innerHTML = '';
   document.getElementById('nextTextBtn').classList.remove('show');
+  document.getElementById('restartTextBtn').hidden = true;
   document.getElementById('allDone').classList.remove('show');
 
   updateNav(); renderDots(); renderPips(); renderQuestion();
@@ -337,16 +338,14 @@ function renderControls() {
     c.appendChild(next);
   }
 
-  if (allAnswered()) {
-    const restart = document.createElement('button'); restart.className = 'btn-secondary';
-    restart.textContent = 'Opnieuw beginnen';
-    restart.onclick = () => {
-      delete textProgress[currentIdx];
-      saveTextProgress();
-      loadText();
-    };
-    c.appendChild(restart);
-  }
+}
+
+// Sits below the score bar now (swapped with Volgende tekst, which takes the
+// more prominent spot right after the questions when another text is next).
+function restartCurrentText() {
+  delete textProgress[currentIdx];
+  saveTextProgress();
+  loadText();
 }
 
 // ─── Finalise ─────────────────────────────────────────────────────────────────
@@ -367,6 +366,7 @@ function displayScoreBar(triggerAllDone) {
 
   const bar = document.getElementById('scoreBar'); bar.classList.add('show');
   bar.innerHTML = `<div class="score-number">${score}/${total}</div><div class="score-text">${pct}% goed — ${comment}</div>`;
+  document.getElementById('restartTextBtn').hidden = false;
 
   const allDone = TEXTS.every((_, i) => isTextComplete(textProgress[i]));
   if (!allDone) document.getElementById('nextTextBtn').classList.add('show');

@@ -118,6 +118,7 @@
   .btn-next-text{background:var(--accent-light);color:var(--accent);border:1.5px solid var(--accent);padding:10px 18px;border-radius:3px;font-family:'IBM Plex Sans',sans-serif;font-size:.88rem;font-weight:600;cursor:pointer;transition:background .15s;display:none;margin-top:12px}
   .btn-next-text.show{display:inline-block}
   .btn-next-text:hover{background:var(--accent-light)}
+  #restartTextBtn{margin-top:12px}
   .all-done{display:none;text-align:center;padding:40px 24px;background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:20px}
   .all-done.show{display:block}
   .all-done .big-score{font-family:'IBM Plex Serif',serif;font-size:2.8rem;font-weight:600;color:var(--accent);line-height:1;margin-bottom:6px}
@@ -285,8 +286,9 @@
         <div class="highlight-note" id="highlightNote">&#8593; Het antwoord is gemarkeerd in de tekst hierboven.</div>
       </div>
       <div class="controls" id="controls"></div>
-      <div class="score-bar" id="scoreBar"></div>
       <button class="btn-next-text" id="nextTextBtn" onclick="goToNext()">Volgende tekst &rarr;</button>
+      <div class="score-bar" id="scoreBar"></div>
+      <button class="btn-secondary" id="restartTextBtn" onclick="restartCurrentText()" hidden>Opnieuw beginnen</button>
     </div>
   </div>
   <div class="tab-panel" id="tab-geheugenbank">
@@ -303,6 +305,6 @@
 <script src="glossary.js?v=3"></script>
 <script src="wordindex.js?v=3"></script>
 <script src="sentenceindex.js?v=3"></script>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>
