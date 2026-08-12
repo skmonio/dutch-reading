@@ -897,11 +897,12 @@ function updateBankCount() {
 }
 
 const ALPHA_SORT_FIELDS = ['alpha-nl', 'alpha-en'];
+const BANK_SORT_FIELDS = ['recent', 'alpha-nl', 'alpha-en', 'percent'];
 
 function loadBankSortMode() {
   try {
     const s = JSON.parse(localStorage.getItem('bankSort') || '{}');
-    bankSortField = ALPHA_SORT_FIELDS.includes(s.field) ? s.field : 'recent';
+    bankSortField = BANK_SORT_FIELDS.includes(s.field) ? s.field : 'recent';
     bankSortDir = s.dir === 'asc' ? 'asc' : 'desc';
   } catch (e) { bankSortField = 'recent'; bankSortDir = 'desc'; }
 }
@@ -967,6 +968,15 @@ function setBankSort(field) {
   renderMemoryBank();
 }
 
+// Quiz accuracy as a plain number for sorting. Untested words (no quiz attempts
+// yet) sort as -1 — below any real percentage — so they consistently land at
+// one end regardless of direction, rather than being scattered as "0%".
+function bankPercentValue(entry) {
+  const qs = entry.quizStats;
+  if (!qs || !qs.attempts) return -1;
+  return Math.round((qs.correct / qs.attempts) * 100);
+}
+
 // memoryBank itself stays in "most recently added first" order (unshift on save) —
 // that's already bankSortField 'recent' + dir 'desc', so only reverse for 'asc'.
 // Sorting only reorders a display copy; removal/practice handlers resolve back to
@@ -978,6 +988,9 @@ function getSortedBank() {
     if (bankSortDir === 'desc') arr.reverse();
   } else if (bankSortField === 'alpha-en') {
     arr.sort((a, b) => (a.gloss || '').localeCompare(b.gloss || '', 'en', { sensitivity: 'base' }));
+    if (bankSortDir === 'desc') arr.reverse();
+  } else if (bankSortField === 'percent') {
+    arr.sort((a, b) => bankPercentValue(a) - bankPercentValue(b));
     if (bankSortDir === 'desc') arr.reverse();
   } else if (bankSortDir === 'asc') {
     arr.reverse();
@@ -1045,9 +1058,15 @@ function renderMemoryBank() {
   enBtn.textContent = bankSortField === 'alpha-en' && bankSortDir === 'desc' ? 'EN Z-A' : 'EN A-Z';
   enBtn.title = 'Sorteer op de Engelse vertaling: A-Z / Z-A';
   enBtn.onclick = () => setBankSort('alpha-en');
+  const pctBtn = document.createElement('button');
+  pctBtn.className = 'sort-btn' + (bankSortField === 'percent' ? ' active' : '');
+  pctBtn.textContent = bankSortField === 'percent' ? (bankSortDir === 'desc' ? '% goed ▾' : '% goed ▴') : '% goed';
+  pctBtn.title = 'Sorteer op quizscore: hoog naar laag / laag naar hoog (niet-geteste woorden tellen als laagste)';
+  pctBtn.onclick = () => setBankSort('percent');
   sortWrap.appendChild(recentBtn);
   sortWrap.appendChild(nlBtn);
   sortWrap.appendChild(enBtn);
+  sortWrap.appendChild(pctBtn);
 
   const actionsWrap = document.createElement('div'); actionsWrap.className = 'bank-actions';
   const practiceBtn = document.createElement('button'); practiceBtn.className = 'btn-primary';
