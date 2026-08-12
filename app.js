@@ -1267,25 +1267,26 @@ function renderPracticeCard() {
 // Retrieval practice (recall the meaning, then check) beats passively flipping a
 // card for retention, so this is a second, more active mode alongside Oefenen.
 let quizQueue = [];
-let quizIdx = 0;
+let quizIdx = 0; // the live question — the next one still to be answered
+let quizViewIdx = 0; // the question currently on screen; < quizIdx while looking back at earlier answers
 let quizScore = 0;
-let quizAnswered = null; // the option text the user picked, or null before they answer
 let quizShowEn = false;
 
 // Wrong-answer options for one word: prefer other saved words' glosses (so the
 // choices feel relevant to what you're actually studying), padding from the full
-// glossary if the bank is too small to supply three distinct distractors.
+// glossary if the bank is too small to supply three distinct distractors. Keeps
+// the Dutch word each gloss belongs to, so the quiz can reveal it after answering.
 function pickDistractors(correctEntry, count) {
   const seen = new Set([correctEntry.gloss]);
   const distractors = [];
   shuffled(memoryBank.filter(e => e.key !== correctEntry.key)).forEach(e => {
-    if (distractors.length < count && e.gloss && !seen.has(e.gloss)) { distractors.push(e.gloss); seen.add(e.gloss); }
+    if (distractors.length < count && e.gloss && !seen.has(e.gloss)) { distractors.push({ gloss: e.gloss, word: e.word }); seen.add(e.gloss); }
   });
   if (distractors.length < count && typeof GLOSSARY !== 'undefined') {
     shuffled(Object.keys(GLOSSARY)).forEach(k => {
       if (distractors.length >= count) return;
       const g = GLOSSARY[k];
-      if (k !== correctEntry.key && g && !seen.has(g)) { distractors.push(g); seen.add(g); }
+      if (k !== correctEntry.key && g && !seen.has(g)) { distractors.push({ gloss: g, word: k }); seen.add(g); }
     });
   }
   return distractors;
@@ -1295,12 +1296,19 @@ function buildQuizQueue(entries) {
   quizQueue = shuffled(entries).map(entry => {
     const options = sentencesForWord(entry);
     const pick = options[Math.floor(Math.random() * options.length)];
-    const choices = shuffled([entry.gloss, ...pickDistractors(entry, 3)]);
-    return { word: entry.word, key: entry.key, gloss: entry.gloss, sentence: pick.sentence, sourceTitle: pick.sourceTitle, topic: pick.topic, choices };
+    const choiceEntries = shuffled([{ gloss: entry.gloss, word: entry.word }, ...pickDistractors(entry, 3)]);
+    const choices = choiceEntries.map(c => c.gloss);
+    const choiceWords = {};
+    choiceEntries.forEach(c => { choiceWords[c.gloss] = c.word; });
+    return {
+      word: entry.word, key: entry.key, gloss: entry.gloss, sentence: pick.sentence,
+      sourceTitle: pick.sourceTitle, topic: pick.topic, choices, choiceWords,
+      answered: null, sentenceRevealed: false, showWordMeanings: false,
+    };
   });
   quizIdx = 0;
+  quizViewIdx = 0;
   quizScore = 0;
-  quizAnswered = null;
   quizShowEn = false;
 }
 
@@ -1328,9 +1336,12 @@ function restartQuizSameSet() {
 }
 
 function selectQuizOption(choiceText) {
-  if (quizAnswered != null) return;
-  quizAnswered = choiceText;
+  // Only the live question can be answered — a question being looked back at
+  // (quizViewIdx < quizIdx) is already answered and its options aren't clickable.
+  if (quizViewIdx !== quizIdx) return;
   const item = quizQueue[quizIdx];
+  if (!item || item.answered != null) return;
+  item.answered = choiceText;
   const correct = choiceText === item.gloss;
   if (correct) quizScore++;
   recordQuizResult(item.key, correct);
@@ -1365,9 +1376,31 @@ function wordStatusBadge(entry) {
   return `<span class="bank-status ${cls}">${pct}%</span>`;
 }
 
-function quizNext() {
+// Advances the live frontier after the current question has been answered —
+// distinct from quizViewPrev/quizViewNext, which only move the on-screen
+// pointer back and forth over already-answered questions without touching
+// quizIdx, the score, or quizStats.
+function quizAdvance() {
   quizIdx++;
-  quizAnswered = null;
+  quizViewIdx = quizIdx;
+  quizShowEn = false;
+  renderQuizCard();
+}
+
+// Step back to look at an earlier (already-answered) question. Purely a view
+// change: it doesn't re-open the question for answering or affect the score.
+function quizViewPrev() {
+  if (quizViewIdx <= 0) return;
+  quizViewIdx--;
+  quizShowEn = false;
+  renderQuizCard();
+}
+
+// Step forward again, either to the next reviewed question or back to the
+// live one/the completion screen once quizViewIdx catches up to quizIdx.
+function quizViewNext() {
+  if (quizViewIdx >= quizQueue.length) return;
+  quizViewIdx++;
   quizShowEn = false;
   renderQuizCard();
 }
@@ -1377,46 +1410,101 @@ function toggleQuizEn() {
   renderQuizCard();
 }
 
+// The sentence starts hidden so the meaning has to come from knowing the word
+// itself, not from context clues in the sentence — revealing it is an explicit
+// choice, available any time and remembered per-question while navigating back/forth.
+function revealQuizSentence() {
+  const item = quizQueue[quizViewIdx];
+  if (!item) return;
+  item.sentenceRevealed = true;
+  renderQuizCard();
+}
+
+// After answering, lets you check which Dutch word each wrong option's gloss
+// actually belongs to — useful since the distractors are real glosses pulled
+// from other words in the bank (or the glossary), not made up.
+function toggleQuizWordMeanings() {
+  const item = quizQueue[quizViewIdx];
+  if (!item) return;
+  item.showWordMeanings = !item.showWordMeanings;
+  renderQuizCard();
+}
+
 function renderQuizCard() {
   const container = document.getElementById('bankPracticeView');
 
-  if (quizIdx >= quizQueue.length) {
+  if (quizViewIdx >= quizQueue.length) {
     const pct = quizQueue.length ? Math.round((quizScore / quizQueue.length) * 100) : 0;
     container.innerHTML =
       `<div class="bank-practice-inner"><div class="practice-done">` +
       `<div class="practice-done-title">Klaar! Je scoorde ${quizScore}/${quizQueue.length} (${pct}%).</div>` +
       `<div class="practice-done-actions">` +
+      (quizQueue.length ? `<button class="btn-back quiz-review-btn">&larr; Bekijk antwoorden</button>` : '') +
       `<button class="btn-primary quiz-restart-btn">Nog een keer</button>` +
       `<button class="btn-secondary" onclick="exitPractice()">Terug naar lijst</button>` +
       `</div></div></div>`;
     container.querySelector('.quiz-restart-btn').onclick = restartQuizSameSet;
+    const reviewBtn = container.querySelector('.quiz-review-btn');
+    if (reviewBtn) reviewBtn.onclick = quizViewPrev;
     return;
   }
 
-  const item = quizQueue[quizIdx];
+  // Looking back at an earlier, already-answered question: reviewing, not
+  // re-answering. The live question (quizViewIdx === quizIdx) is the only one
+  // that's ever open for a fresh answer.
+  const reviewing = quizViewIdx < quizIdx;
+  const item = quizQueue[quizViewIdx];
   const enSentence = sentenceTranslation(item.sentence);
   const source = { title: item.sourceTitle, topic: item.topic };
-  const answered = quizAnswered != null;
-  const sentenceHtml = (quizShowEn && enSentence)
-    ? escapeHtml(enSentence)
-    : answered
-      ? tapSentenceHtml(item.sentence, item.word, source)
-      : markedSentenceHtml(item.sentence, item.word);
-  const enToggleHtml = (answered && enSentence)
-    ? `<button class="sentence-en-toggle" onclick="toggleQuizEn()">${quizShowEn ? 'NL' : 'EN'}</button>`
+  const answered = item.answered != null;
+
+  // The sentence stays hidden behind a reveal button until tapped, so the word
+  // has to be answered from memory rather than guessed from its context.
+  let sentenceBlockHtml;
+  if (!item.sentenceRevealed) {
+    sentenceBlockHtml = `<div class="quiz-sentence-hidden">` +
+      `<button class="quiz-reveal-btn quiz-reveal-sentence-btn" onclick="revealQuizSentence()">Toon zin &darr;</button>` +
+      `</div>`;
+  } else {
+    const sentenceHtml = (quizShowEn && enSentence)
+      ? escapeHtml(enSentence)
+      : answered
+        ? tapSentenceHtml(item.sentence, item.word, source)
+        : markedSentenceHtml(item.sentence, item.word);
+    const enToggleHtml = (answered && enSentence)
+      ? `<button class="sentence-en-toggle" onclick="toggleQuizEn()">${quizShowEn ? 'NL' : 'EN'}</button>`
+      : '';
+    sentenceBlockHtml = `<div class="practice-sentence">${sentenceHtml}${enToggleHtml}</div>`;
+  }
+
+  const wordMeaningsBtnHtml = answered
+    ? `<button class="quiz-reveal-btn quiz-reveal-words-btn" onclick="toggleQuizWordMeanings()">` +
+      `${item.showWordMeanings ? 'Verberg Nederlandse woorden' : 'Toon Nederlandse woorden'}</button>`
     : '';
+
+  const progressHtml = `${quizViewIdx + 1} / ${quizQueue.length} &middot; ${quizScore} goed` +
+    (reviewing ? ` &middot; bekijken` : '');
+
+  let forwardBtnHtml = '';
+  if (reviewing) {
+    forwardBtnHtml = `<button class="btn-primary quiz-forward-btn">Volgende &rarr;</button>`;
+  } else if (answered) {
+    forwardBtnHtml = `<button class="btn-primary quiz-forward-btn">${quizIdx === quizQueue.length - 1 ? 'Klaar' : 'Volgende &rarr;'}</button>`;
+  }
 
   container.innerHTML =
     `<div class="bank-practice-inner">` +
-    `<div class="practice-progress">${quizIdx + 1} / ${quizQueue.length} &middot; ${quizScore} goed</div>` +
+    `<div class="practice-progress">${progressHtml}</div>` +
     `<div class="practice-card">` +
-    `<div class="practice-sentence">${sentenceHtml}${enToggleHtml}</div>` +
+    sentenceBlockHtml +
     `<div class="quiz-question">Wat betekent <strong>${escapeHtml(item.word)}</strong>?</div>` +
     `<div class="options quiz-options"></div>` +
+    wordMeaningsBtnHtml +
     `</div>` +
     `<div class="practice-nav">` +
+    `<button class="btn-back" ${quizViewIdx === 0 ? 'disabled' : ''} onclick="quizViewPrev()">&larr; Vorige</button>` +
     `<button class="btn-secondary" onclick="exitPractice()">Stoppen</button>` +
-    (answered ? `<button class="btn-primary quiz-next-btn">${quizIdx === quizQueue.length - 1 ? 'Klaar' : 'Volgende &rarr;'}</button>` : '') +
+    forwardBtnHtml +
     `</div></div>`;
 
   const opts = container.querySelector('.quiz-options');
@@ -1425,17 +1513,26 @@ function renderQuizCard() {
     if (answered) {
       div.classList.add('disabled');
       if (choice === item.gloss) div.classList.add('correct');
-      else if (choice === quizAnswered) div.classList.add('wrong');
+      else if (choice === item.answered) div.classList.add('wrong');
     }
     const letter = document.createElement('span'); letter.className = 'option-letter';
     letter.textContent = String.fromCharCode(65 + oi);
     const text = document.createElement('span'); text.textContent = choice;
     div.appendChild(letter); div.appendChild(text);
+    if (answered && item.showWordMeanings) {
+      const sourceWord = item.choiceWords && item.choiceWords[choice];
+      if (sourceWord && sourceWord !== item.word) {
+        const src = document.createElement('span'); src.className = 'option-source';
+        src.textContent = ` — ${sourceWord}`;
+        div.appendChild(src);
+      }
+    }
     if (!answered) div.addEventListener('click', () => selectQuizOption(choice));
     opts.appendChild(div);
   });
 
-  if (answered) container.querySelector('.quiz-next-btn').onclick = quizNext;
+  const forwardBtn = container.querySelector('.quiz-forward-btn');
+  if (forwardBtn) forwardBtn.onclick = reviewing ? quizViewNext : quizAdvance;
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
