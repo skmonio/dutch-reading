@@ -1274,18 +1274,19 @@ let quizShowEn = false;
 
 // Wrong-answer options for one word: prefer other saved words' glosses (so the
 // choices feel relevant to what you're actually studying), padding from the full
-// glossary if the bank is too small to supply three distinct distractors.
+// glossary if the bank is too small to supply three distinct distractors. Keeps
+// the Dutch word each gloss belongs to, so the quiz can reveal it after answering.
 function pickDistractors(correctEntry, count) {
   const seen = new Set([correctEntry.gloss]);
   const distractors = [];
   shuffled(memoryBank.filter(e => e.key !== correctEntry.key)).forEach(e => {
-    if (distractors.length < count && e.gloss && !seen.has(e.gloss)) { distractors.push(e.gloss); seen.add(e.gloss); }
+    if (distractors.length < count && e.gloss && !seen.has(e.gloss)) { distractors.push({ gloss: e.gloss, word: e.word }); seen.add(e.gloss); }
   });
   if (distractors.length < count && typeof GLOSSARY !== 'undefined') {
     shuffled(Object.keys(GLOSSARY)).forEach(k => {
       if (distractors.length >= count) return;
       const g = GLOSSARY[k];
-      if (k !== correctEntry.key && g && !seen.has(g)) { distractors.push(g); seen.add(g); }
+      if (k !== correctEntry.key && g && !seen.has(g)) { distractors.push({ gloss: g, word: k }); seen.add(g); }
     });
   }
   return distractors;
@@ -1295,8 +1296,15 @@ function buildQuizQueue(entries) {
   quizQueue = shuffled(entries).map(entry => {
     const options = sentencesForWord(entry);
     const pick = options[Math.floor(Math.random() * options.length)];
-    const choices = shuffled([entry.gloss, ...pickDistractors(entry, 3)]);
-    return { word: entry.word, key: entry.key, gloss: entry.gloss, sentence: pick.sentence, sourceTitle: pick.sourceTitle, topic: pick.topic, choices, answered: null };
+    const choiceEntries = shuffled([{ gloss: entry.gloss, word: entry.word }, ...pickDistractors(entry, 3)]);
+    const choices = choiceEntries.map(c => c.gloss);
+    const choiceWords = {};
+    choiceEntries.forEach(c => { choiceWords[c.gloss] = c.word; });
+    return {
+      word: entry.word, key: entry.key, gloss: entry.gloss, sentence: pick.sentence,
+      sourceTitle: pick.sourceTitle, topic: pick.topic, choices, choiceWords,
+      answered: null, sentenceRevealed: false, showWordMeanings: false,
+    };
   });
   quizIdx = 0;
   quizViewIdx = 0;
@@ -1402,6 +1410,26 @@ function toggleQuizEn() {
   renderQuizCard();
 }
 
+// The sentence starts hidden so the meaning has to come from knowing the word
+// itself, not from context clues in the sentence — revealing it is an explicit
+// choice, available any time and remembered per-question while navigating back/forth.
+function revealQuizSentence() {
+  const item = quizQueue[quizViewIdx];
+  if (!item) return;
+  item.sentenceRevealed = true;
+  renderQuizCard();
+}
+
+// After answering, lets you check which Dutch word each wrong option's gloss
+// actually belongs to — useful since the distractors are real glosses pulled
+// from other words in the bank (or the glossary), not made up.
+function toggleQuizWordMeanings() {
+  const item = quizQueue[quizViewIdx];
+  if (!item) return;
+  item.showWordMeanings = !item.showWordMeanings;
+  renderQuizCard();
+}
+
 function renderQuizCard() {
   const container = document.getElementById('bankPracticeView');
 
@@ -1429,14 +1457,31 @@ function renderQuizCard() {
   const enSentence = sentenceTranslation(item.sentence);
   const source = { title: item.sourceTitle, topic: item.topic };
   const answered = item.answered != null;
-  const sentenceHtml = (quizShowEn && enSentence)
-    ? escapeHtml(enSentence)
-    : answered
-      ? tapSentenceHtml(item.sentence, item.word, source)
-      : markedSentenceHtml(item.sentence, item.word);
-  const enToggleHtml = (answered && enSentence)
-    ? `<button class="sentence-en-toggle" onclick="toggleQuizEn()">${quizShowEn ? 'NL' : 'EN'}</button>`
+
+  // The sentence stays hidden behind a reveal button until tapped, so the word
+  // has to be answered from memory rather than guessed from its context.
+  let sentenceBlockHtml;
+  if (!item.sentenceRevealed) {
+    sentenceBlockHtml = `<div class="quiz-sentence-hidden">` +
+      `<button class="quiz-reveal-btn quiz-reveal-sentence-btn" onclick="revealQuizSentence()">Toon zin &darr;</button>` +
+      `</div>`;
+  } else {
+    const sentenceHtml = (quizShowEn && enSentence)
+      ? escapeHtml(enSentence)
+      : answered
+        ? tapSentenceHtml(item.sentence, item.word, source)
+        : markedSentenceHtml(item.sentence, item.word);
+    const enToggleHtml = (answered && enSentence)
+      ? `<button class="sentence-en-toggle" onclick="toggleQuizEn()">${quizShowEn ? 'NL' : 'EN'}</button>`
+      : '';
+    sentenceBlockHtml = `<div class="practice-sentence">${sentenceHtml}${enToggleHtml}</div>`;
+  }
+
+  const wordMeaningsBtnHtml = answered
+    ? `<button class="quiz-reveal-btn quiz-reveal-words-btn" onclick="toggleQuizWordMeanings()">` +
+      `${item.showWordMeanings ? 'Verberg Nederlandse woorden' : 'Toon Nederlandse woorden'}</button>`
     : '';
+
   const progressHtml = `${quizViewIdx + 1} / ${quizQueue.length} &middot; ${quizScore} goed` +
     (reviewing ? ` &middot; bekijken` : '');
 
@@ -1451,9 +1496,10 @@ function renderQuizCard() {
     `<div class="bank-practice-inner">` +
     `<div class="practice-progress">${progressHtml}</div>` +
     `<div class="practice-card">` +
-    `<div class="practice-sentence">${sentenceHtml}${enToggleHtml}</div>` +
+    sentenceBlockHtml +
     `<div class="quiz-question">Wat betekent <strong>${escapeHtml(item.word)}</strong>?</div>` +
     `<div class="options quiz-options"></div>` +
+    wordMeaningsBtnHtml +
     `</div>` +
     `<div class="practice-nav">` +
     `<button class="btn-back" ${quizViewIdx === 0 ? 'disabled' : ''} onclick="quizViewPrev()">&larr; Vorige</button>` +
@@ -1473,6 +1519,14 @@ function renderQuizCard() {
     letter.textContent = String.fromCharCode(65 + oi);
     const text = document.createElement('span'); text.textContent = choice;
     div.appendChild(letter); div.appendChild(text);
+    if (answered && item.showWordMeanings) {
+      const sourceWord = item.choiceWords && item.choiceWords[choice];
+      if (sourceWord && sourceWord !== item.word) {
+        const src = document.createElement('span'); src.className = 'option-source';
+        src.textContent = ` — ${sourceWord}`;
+        div.appendChild(src);
+      }
+    }
     if (!answered) div.addEventListener('click', () => selectQuizOption(choice));
     opts.appendChild(div);
   });
